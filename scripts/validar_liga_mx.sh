@@ -8,7 +8,8 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT/backend"
-[ -d .venv ] || { python3 -m venv .venv && .venv/bin/pip install -q -r requirements.txt; }
+source "$ROOT/scripts/_venv.sh"
+ensure_venv requirements.txt
 export DATA_MODE=real
 PY=.venv/bin/python
 

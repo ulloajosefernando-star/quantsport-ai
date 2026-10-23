@@ -8,7 +8,7 @@ Estado actual: **Fase 1 completa y Fase 3 (datos reales de fútbol) en curso**. 
 
 ## Requisitos
 
-- Python 3.12 o superior (probado con 3.13)
+- Python 3.12 o superior (probado con 3.13). En Mac, el `python3` del sistema suele ser 3.9: instala uno nuevo desde python.org o con `brew install python@3.13`; los scripts lo detectan solos
 - Node 20 o superior (probado con 22)
 - Opcional: Docker con Docker Compose
 
