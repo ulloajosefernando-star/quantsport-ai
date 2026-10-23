@@ -35,6 +35,7 @@ from app.providers.normalize import COMPETITIONS
 from app.providers.registry import SEASON_AWARE, all_providers, get_provider
 from app.ranking.ranker import RankingFilters, analyze_upcoming, build_ranking, flatten, upcoming_events
 from app.reporting import budget, predictions
+from app.sports.football.data import MANUAL_SOURCE
 from app.sports.football.service import football_service
 from app.telegram.notifier import TelegramNotifier
 from app.value_engine.engine import CATEGORIES
@@ -160,6 +161,59 @@ def event_detail(event_id: int, db: Session = Depends(get_db), settings: Setting
     an["kickoff_local"] = _local(ev.kickoff_utc, settings.timezone)
     an["timezone"] = settings.timezone
     return an
+
+
+class ManualOddsIn(BaseModel):
+    """Cuota vista a mano en una casa (p. ej. Playdoit). Solo se guarda y se evalúa; no se apuesta nada."""
+
+    bookmaker: str = Field("Playdoit", min_length=1, max_length=40)
+    market: str = Field(..., pattern="^(1x2|totals|btts|ah)$")
+    selection: str = Field(..., pattern="^(home|draw|away|over|under|yes|no)$")
+    line: float | None = Field(None, ge=-10, le=20)
+    odds: str = Field(..., min_length=1, max_length=12)
+    format: str = Field("decimal", pattern="^(decimal|american)$")
+
+
+VALID_SELECTIONS = {"1x2": {"home", "draw", "away"}, "totals": {"over", "under"}, "btts": {"yes", "no"},
+                    "ah": {"home", "away"}}
+
+
+@router.post("/events/{event_id}/manual-odds", tags=["cartelera"], dependencies=[Depends(require_admin)])
+def manual_odds(event_id: int, body: ManualOddsIn, db: Session = Depends(get_db)) -> dict:
+    ev = db.get(Event, event_id)
+    if ev is None:
+        raise HTTPException(404, "Evento no encontrado")
+    if ev.status != "scheduled" or as_utc(ev.kickoff_utc) <= datetime.now(UTC):
+        raise HTTPException(400, "Solo se capturan cuotas de partidos que aún no empiezan")
+    if body.selection not in VALID_SELECTIONS[body.market]:
+        raise HTTPException(400, f"Selección '{body.selection}' no válida para el mercado {body.market}")
+    needs_line = body.market in ("totals", "ah")
+    if needs_line and (body.line is None or abs(body.line * 4 - round(body.line * 4)) > 1e-9):
+        raise HTTPException(400, "Este mercado necesita una línea en múltiplos de 0.25 (p. ej. 2.5)")
+    line = body.line if needs_line else None
+    bookmaker = " ".join("".join(c for c in body.bookmaker if c.isalnum() or c in " .-_").split())
+    if not bookmaker:
+        raise HTTPException(400, "Nombre de casa no válido")
+    try:
+        dec = to_decimal(body.odds.strip(), body.format)
+    except (InvalidOddsError, ValueError) as exc:
+        raise HTTPException(400, f"Cuota no válida: {exc}") from exc
+    if not 1.01 <= dec <= 1000:
+        raise HTTPException(400, "La cuota decimal debe estar entre 1.01 y 1000")
+    now = datetime.now(UTC)
+    db.add(OddsSnapshot(event_id=ev.id, bookmaker=bookmaker, market=body.market, line=line,
+                        selection=body.selection, odds_decimal=dec, captured_at=now, is_closing=False,
+                        source=MANUAL_SOURCE, is_synthetic=ev.is_synthetic))
+    db.commit()
+    focus = {"market": body.market, "selection": body.selection, "line": line, "bookmaker": bookmaker}
+    an = football_service.analyze_event(db, ev, get_thresholds(db), now=now, focus=focus)
+    others = [r["odds"] for r in an.get("odds_table", [])
+              if r["market"] == body.market and r["selection"] == body.selection and r["source"] != MANUAL_SOURCE
+              and r["bookmaker"] != bookmaker and r["line"] == line]
+    return {"bookmaker": bookmaker, "odds_decimal": dec, "american": decimal_to_american(dec),
+            "assessment": an.get("focus_assessment"), "best_other_odds": max(others) if others else None,
+            "model_status": an.get("model_status"),
+            "disclaimer": "Solo cálculo. La plataforma no se conecta a la casa ni realiza apuestas."}
 
 
 # ---------------------------------------------------------------- oportunidades

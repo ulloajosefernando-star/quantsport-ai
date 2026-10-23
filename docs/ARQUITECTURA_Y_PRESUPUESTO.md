@@ -31,7 +31,7 @@ Coste de The Odds API: cada consulta de cuotas cuesta mercados × regiones créd
 
 Nota sobre API-Football: la página de precios confirma 100 solicitudes/día gratis y "todas las competiciones y endpoints", pero no dice qué temporadas incluye. Dos reportes independientes de usuarios (oct-2026) indican que el plan gratuito rechaza la temporada actual con un error `errors.plan` y solo permite temporadas pasadas (2022–2024). El adaptador detecta ese error, lo explica y no lo reintenta. Por eso la ruta gratuita para Liga MX es: histórico de football-data.co.uk + calendario y cuotas de The Odds API.
 
-No se usa scraping ni se elude ningún control de acceso. Se descartaron ESPN, SofaScore, FBref, Understat, FotMob y Transfermarkt: son APIs no oficiales o requieren scraping.
+No se usa scraping ni se elude ningún control de acceso. Las casas sin API pública (p. ej. Playdoit) se cubren con captura manual de cuotas en el detalle del partido. Se descartaron ESPN, SofaScore, FBref, Understat, FotMob y Transfermarkt: son APIs no oficiales o requieren scraping.
 
 ## 3. Estimación de costes mensuales (MXN)
 
@@ -108,7 +108,8 @@ Completo y probado:
 - Resumen a Telegram (vista previa y envío) con lista blanca, deduplicación y límite diario.
 - Adaptador de API-Football (resultados, calendario, cuotas; detecta restricciones de plan), calendario gratuito desde The Odds API, revisión y fusión de equipos entre fuentes, línea de comandos (`python -m app.cli`).
 - Fuentes gratuitas adicionales: openfootball (resultados de 6 ligas europeas, dominio público) y ratings de Club Elo como referencia externa.
-- 130 pruebas automáticas, ninguna usa APIs reales.
+- Captura manual de cuotas vistas en otra casa (p. ej. Playdoit) con evaluación inmediata; no entra en el consenso del mercado.
+- 139 pruebas automáticas, ninguna usa APIs reales.
 
 Pendiente o incompleto:
 - Fútbol queda como parcial: las herramientas para validar con datos reales de Liga MX están listas (`scripts/validar_liga_mx.sh`), pero la validación no se ha corrido con datos reales porque el entorno de construcción no tiene acceso a internet.

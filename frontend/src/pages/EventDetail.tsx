@@ -2,6 +2,7 @@ import { useParams, Link } from 'react-router-dom'
 import { useApi } from '../hooks/useApi'
 import type { Assessment, Category } from '../types/api'
 import { Card, CategoryBadge, Empty, ErrorBox, Loading, ModelBadge, SyntheticTag } from '../components/ui'
+import { ManualOddsCard } from '../components/ManualOdds'
 import { OddsHistoryChart, ProbBar, ScoreHeatmap } from '../charts/charts'
 import { MARKET_LABEL, SELECTION_LABEL, localTime, num, pct, signedPct } from '../lib/format'
 
@@ -165,6 +166,10 @@ export default function EventDetail() {
             )}
           </Card>
         </>
+      )}
+
+      {data.status === 'scheduled' && new Date(data.kickoff_utc) > new Date() && (
+        <ManualOddsCard eventId={data.event_id} home={data.home} away={data.away} onSaved={reload} />
       )}
 
       <div className="grid gap-6 lg:grid-cols-2">

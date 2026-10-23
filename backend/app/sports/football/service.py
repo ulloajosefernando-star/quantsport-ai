@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import threading
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, timedelta
 
 import numpy as np
@@ -169,7 +169,13 @@ class FootballService:
         return mv.id
 
     # -------------------------------------------------------------- event
-    def analyze_event(self, s: Session, ev: Event, th: ValueThresholds, now: datetime | None = None) -> dict:
+    def analyze_event(self, s: Session, ev: Event, th: ValueThresholds, now: datetime | None = None,
+                      focus: dict | None = None) -> dict:
+        """Análisis completo del evento.
+
+        ``focus`` = {"market", "selection", "line", "bookmaker"} añade ``focus_assessment``: la misma
+        evaluación pero usando SOLO la cuota de ese operador (p. ej. una cuota capturada a mano).
+        """
         now = now or datetime.now(UTC)
         comp = ev.competition
         st = self.state(s, comp, th)
@@ -257,6 +263,18 @@ class FootballService:
             a.is_synthetic = a.is_synthetic or out["is_synthetic"]
             assessments.append(a.to_dict())
         out["assessments"] = assessments
+        if focus:
+            out["focus_assessment"] = None
+            for sel, ps in selections:
+                same_line = (sel.line is None and focus.get("line") is None) or (
+                    sel.line is not None and focus.get("line") is not None and abs(sel.line - focus["line"]) < 1e-9)
+                if sel.market == focus["market"] and sel.selection == focus["selection"] and same_line:
+                    only = replace(sel, offers=[o for o in sel.offers if o.bookmaker == focus["bookmaker"]])
+                    status = st.gate.market_status(sel.market, sel.line) if st.gate else "experimental"
+                    fa = assess(only, th, status, data_issues, st.calibration_score, now=now, p_samples=ps)
+                    fa.is_synthetic = fa.is_synthetic or out["is_synthetic"]
+                    out["focus_assessment"] = fa.to_dict()
+                    break
         out["margin_analysis"] = _margin_analysis(live)
         cats = [a["category"] for a in assessments if a["n_offers"]]
         out["summary_category"] = min(cats, key=CATEGORY_ORDER.index) if cats else "datos_insuficientes"

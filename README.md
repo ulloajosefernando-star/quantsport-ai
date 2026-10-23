@@ -93,6 +93,12 @@ Cada llamada queda registrada en **Fuentes** con los créditos consumidos. La pl
 
 **Nombres de equipos.** Cada fuente escribe los nombres distinto ("Club America", "America", "América"). Los alias conocidos están en `data/team_aliases.json`. Si aparece un equipo sin historial, ve a **Fuentes → Revisión de equipos** y fusiónalo con el correcto. El alias queda guardado para las siguientes sincronizaciones.
 
+## Cuotas de Playdoit u otra casa (captura manual)
+
+La plataforma no se conecta a casas de apuestas como Playdoit: no tienen API pública y leer su sitio sería scraping. En su lugar, abre el partido en **Cartelera → detalle** y usa **Evaluar una cuota que viste en otra casa**: eliges la selección, escribes la cuota (decimal o americana) y la plataforma te dice probabilidad del modelo, cuota justa, cuota mínima, EV y stake sugerido, y la compara con las demás casas.
+
+La cuota queda guardada con origen `manual` y aparece en la tabla de cuotas y en el ranking como una casa más. No entra en el consenso del mercado (la referencia sin margen), para que una cuota tecleada no mueva la referencia. Si el mercado está bloqueado o la evidencia es débil, la respuesta sigue siendo NO BET.
+
 ## Telegram
 
 Crea un bot con @BotFather y define `TELEGRAM_BOT_TOKEN` y `TELEGRAM_ALLOWED_CHAT_IDS`. En **Configuración → Telegram** puedes ver la vista previa y enviar el resumen. Solo se envía a los chats autorizados y con un límite diario. Los comandos interactivos llegan en la Fase 6.
@@ -104,7 +110,7 @@ Inicio, Cartelera, Oportunidades, Detalle de evento, Rendimiento y validación, 
 ## Pruebas
 
 ```bash
-./scripts/test.sh      # ruff + pytest (130 pruebas) + build del frontend
+./scripts/test.sh      # ruff + pytest (139 pruebas) + build del frontend
 ```
 
 Ninguna prueba usa APIs reales ni consume cuotas: todo el HTTP se simula con `httpx.MockTransport`.
