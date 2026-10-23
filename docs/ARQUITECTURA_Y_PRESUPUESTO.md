@@ -83,7 +83,7 @@ Un modelo solo produce recomendaciones si supera el control de calidad del merca
 |---|---|---|
 | 1 | Núcleo matemático, fútbol (Dixon-Coles), validación, motor de valor, ranking, dashboard, demo, CSV, The Odds API, football-data.org, envío a Telegram | Hecho |
 | 2 | Modelos NBA, NFL, MLB y tenis (Elo, regresión logística, Poisson por deporte) con sus fuentes gratuitas | Pendiente |
-| 3 | API-Football (Liga MX), calendario gratis vía The Odds API, validación con cuotas de cierre, revisión de equipos, CLI de validación | En curso: conectores y herramientas hechos; falta correr la validación con datos reales en tu equipo. Alineaciones, lesiones y xG pendientes |
+| 3 | API-Football (Liga MX), calendario gratis vía The Odds API, validación con cuotas de cierre, revisión de equipos, CLI de validación | En curso: conectores hechos y primera validación real corrida (sin ventaja frente al cierre). Faltan cuotas pre-cierre acumuladas, alineaciones, lesiones y xG |
 | 4 | Mercados adicionales: córners, tarjetas, props | Pendiente |
 | 5 | Comparación de modelos y ensamblado, recalibración (isotónica / Platt) | Pendiente |
 | 6 | Bot de Telegram interactivo: /start /help /today /ranking /football /nba /nfl /mlb /tennis /event /performance /status /settings | Pendiente |
@@ -112,7 +112,7 @@ Completo y probado:
 - 139 pruebas automáticas, ninguna usa APIs reales.
 
 Pendiente o incompleto:
-- Fútbol queda como parcial: las herramientas para validar con datos reales de Liga MX están listas (`scripts/validar_liga_mx.sh`), pero la validación no se ha corrido con datos reales porque el entorno de construcción no tiene acceso a internet.
+- Fútbol queda como parcial. Primera validación real de Liga MX (23-oct-2026, ver sección 8): 1X2 bloqueado y Over/Under y ambos anotan experimentales. Hoy el modelo no encuentra ventaja y la plataforma recomienda NO BET.
 - NBA, NFL, MLB y tenis: solo están registrados; no tienen modelo ni datos (no se declaran implementados).
 - Alineaciones, lesiones, xG, córners y tarjetas.
 - Comandos interactivos de Telegram y programador automático de tareas.
@@ -122,3 +122,25 @@ Pendiente o incompleto:
 ## 7. Resultado del demo (datos SINTÉTICOS)
 
 El demo genera una liga ficticia cuyo "mercado" ignora a propósito la ventaja de local, para que exista una ineficiencia que el modelo pueda detectar. Aun así, el control de calidad bloquea 1X2 (el modelo no supera al mercado en log loss) y totales (ECE 0.067 > 0.05). Solo "ambos anotan" pasa a producción. Esto muestra que la plataforma dice NO BET cuando la evidencia no alcanza. Nada de esto indica rentabilidad real.
+
+## 8. Primera validación con datos reales: Liga MX (23-oct-2026)
+
+Corrida en el equipo de Fernando con `scripts/validar_liga_mx.sh`, sin clave de The Odds API, con el CSV de football-data.co.uk:
+- 4,770 partidos importados y 25 equipos reconciliados, ninguno pendiente de revisión.
+- Entrenamiento: 1,304 partidos.
+- Walk-forward: 861 predicciones fuera de muestra entre 2024-03 y 2026-10.
+- Referencia de mercado: solo cuotas de cierre.
+
+| Mercado | Estado | Log loss modelo | Log loss frecuencias | Log loss mercado | ECE |
+|---|---|---|---|---|---|
+| 1X2 | Bloqueado | 1.0052 | 1.0638 | 0.9829 | 0.012 |
+| Over/Under 2.5 | Experimental | 0.6891 | 0.6891 | — | 0.043 |
+| Ambos anotan | Experimental | 0.6889 | 0.6830 | — | 0.057 |
+
+Lectura de los resultados:
+- **1X2:** el modelo supera a las frecuencias, pero es peor que el cierre sin margen (Δ +0.0223, IC90 [+0.0120, +0.0327]).
+- **Simulación al cierre:** 689 apuestas con ROI −7.9% (IC90 −17.4% a +2.7%).
+- **Over/Under y ambos anotan:** no mejoran a las frecuencias, y no hay cuotas históricas de esos mercados.
+- **Conclusión:** sin ventaja demostrada. La plataforma recomienda NO BET.
+
+Siguiente paso: acumular cuotas pre-cierre con The Odds API para medir CLV. Después, nuevas variables (Fase 3) y recalibración y ensamblado (Fase 5).
