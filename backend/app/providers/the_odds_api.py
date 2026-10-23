@@ -10,7 +10,7 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import httpx
 
@@ -18,6 +18,7 @@ from app.core.config import Settings
 from app.providers.base import (
     Capability,
     DataProvider,
+    NormalizedEvent,
     NormalizedOdds,
     ProviderBatch,
     ProviderError,
@@ -77,6 +78,28 @@ def parse_odds_response(data: list[dict], competition_key: str) -> list[Normaliz
     return out
 
 
+def parse_events(data: list[dict], competition_key: str) -> list[NormalizedEvent]:
+    """Partidos programados que aparecen en la respuesta de cuotas.
+
+    Sirven de calendario cuando no hay otra fuente de fixtures (p. ej. Liga MX con datos gratuitos):
+    sin ellos, las cuotas de partidos futuros no tendrían evento al que asociarse.
+    """
+    meta = COMPETITIONS.get(competition_key, {})
+    out = []
+    for ev in data:
+        try:
+            kickoff = datetime.fromisoformat(ev["commence_time"].replace("Z", "+00:00"))
+            home, away = ev["home_team"], ev["away_team"]
+        except (KeyError, TypeError, ValueError):
+            continue
+        out.append(NormalizedEvent(
+            sport="football", competition_key=competition_key, competition_name=meta.get("name", competition_key),
+            country=meta.get("country", ""), kickoff_utc=kickoff, home=canonical_team_name(home),
+            away=canonical_team_name(away), status="scheduled", source=SOURCE, source_event_id=ev.get("id", ""),
+        ))
+    return out
+
+
 class TheOddsApiProvider(DataProvider):
     def __init__(self, settings: Settings, transport: httpx.BaseTransport | None = None) -> None:
         self.settings = settings
@@ -86,7 +109,7 @@ class TheOddsApiProvider(DataProvider):
             name="The Odds API",
             kind=ProviderKind.REAL,
             sports=["football", "nba", "nfl", "mlb", "tennis"],
-            capabilities=[Capability.ODDS],  # históricos solo en planes de pago
+            capabilities=[Capability.ODDS, Capability.FIXTURES],  # históricos solo en planes de pago
             configured=bool(settings.the_odds_api_key),
             docs_url="https://the-odds-api.com/liveapi/guides/v4/",
             cost_note="Starter gratis: 500 créditos/mes. 20K: 30 USD/mes (≈ 553 MXN, excede el presupuesto).",
@@ -133,7 +156,23 @@ class TheOddsApiProvider(DataProvider):
             },
             cache_ttl=15 * 60, cost=cost, credits_from_headers=_credits,
         )
+        now = datetime.now(UTC)
+        batch.events = [e for e in parse_events(data, competition_key) if e.kickoff_utc > now]
         batch.odds = parse_odds_response(data, competition_key)
         if meta.get("from_cache"):
             batch.warnings.append("Cuotas servidas desde caché (≤15 min).")
         return batch
+
+    def fetch_fixtures(self, competition_key: str, days_ahead: int = 7) -> ProviderBatch:
+        """Calendario desde /v4/sports/{sport}/events (no consume créditos)."""
+        sport_key = COMPETITIONS.get(competition_key, {}).get("odds_api")
+        if not sport_key:
+            raise ProviderError(f"No hay sport_key de The Odds API para {competition_key}")
+        data, _ = self.client.get_json(
+            f"/v4/sports/{sport_key}/events", {"apiKey": self.settings.the_odds_api_key, "dateFormat": "iso"},
+            cache_ttl=3 * 3600, cost=0.0, credits_from_headers=_credits,
+        )
+        now = datetime.now(UTC)
+        horizon = now + timedelta(days=days_ahead)
+        events = [e for e in parse_events(data, competition_key) if now < e.kickoff_utc <= horizon]
+        return ProviderBatch(source=SOURCE, fetched_at=now, events=events)

@@ -4,7 +4,7 @@ Plataforma de análisis cuantitativo deportivo. Calcula probabilidades, compara 
 
 > **Aviso.** Es un análisis probabilístico, no una garantía de resultado. La plataforma no realiza apuestas, no deposita dinero, no inicia sesión en casas de apuestas ni ejecuta transacciones financieras. Un ROI histórico positivo no demuestra rentabilidad futura.
 
-Estado actual: **Fase 1**. El detalle de lo completo y lo pendiente, las fuentes, los costes en MXN y el plan por fases están en [docs/ARQUITECTURA_Y_PRESUPUESTO.md](docs/ARQUITECTURA_Y_PRESUPUESTO.md).
+Estado actual: **Fase 1 completa y Fase 3 (datos reales de fútbol) en curso**. El detalle de lo completo y lo pendiente, las fuentes, los costes en MXN y el plan por fases están en [docs/ARQUITECTURA_Y_PRESUPUESTO.md](docs/ARQUITECTURA_Y_PRESUPUESTO.md).
 
 ## Requisitos
 
@@ -48,13 +48,48 @@ El puerto se publica solo en `127.0.0.1`. Si lo expones en un VPS, define `APP_E
 - `DATA_MODE=demo` (por defecto): genera una liga **ficticia y sintética** de 16 equipos. Todo dato sintético aparece con la etiqueta DEMO. Sirve para ver la plataforma funcionando, no para apostar.
 - `DATA_MODE=real`: solo usa proveedores configurados en `.env` y CSV importados. Al pasar a este modo, los datos sintéticos se eliminan.
 
-## Cargar datos reales gratis
+## Liga MX con datos reales (gratis)
 
-1. **CSV de football-data.co.uk.** Descarga, por ejemplo, `https://www.football-data.co.uk/new/MEX.csv` (Liga MX) desde tu navegador y súbelo en **Fuentes → Importar CSV**. También acepta el formato principal de ligas europeas y un formato genérico (`date, competition, home, away, home_goals, away_goals[, odds_home, odds_draw, odds_away, bookmaker, odds_captured_at]`).
-2. **The Odds API** (500 créditos/mes gratis): crea una clave en the-odds-api.com, ponla en `THE_ODDS_API_KEY` y sincroniza desde la API: `POST /api/providers/the_odds_api/sync?competition=mex_liga_mx&kind=odds` (con el encabezado `X-Admin-Token` si lo definiste).
-3. **football-data.org** (gratis, 10 llamadas/min): pon el token en `FOOTBALL_DATA_ORG_TOKEN` y usa `POST /api/providers/football_data_org/sync?competition=eng_premier_league&kind=results`.
+```bash
+./scripts/validar_liga_mx.sh
+```
 
-Cada llamada queda registrada en **Fuentes** con los créditos consumidos. La plataforma deja de llamar cuando se acerca al límite del plan.
+El script hace todo en tu computadora:
+
+1. Descarga el histórico de Liga MX de football-data.co.uk (resultados y cuotas de cierre).
+2. Si pusiste `THE_ODDS_API_KEY` en `.env`, trae el calendario (no gasta créditos) y las cuotas actuales (unos 2 créditos).
+3. Lista los equipos cuyos nombres no coinciden entre fuentes.
+4. Ajusta el modelo, lo valida con walk-forward y guarda un informe en `data/reports/`.
+
+Para ver esos datos en el dashboard, pon `DATA_MODE=real` en `.env` y reinicia el backend.
+
+Qué esperar con datos gratuitos:
+
+- El CSV de Liga MX solo trae cuotas de **cierre** de 1X2. El modelo se compara contra ese cierre, que es la referencia más difícil de superar.
+- Over/Under y ambos anotan quedan como "experimental" hasta que haya cuotas históricas de esos mercados. La plataforma las va acumulando sola cada vez que sincronizas The Odds API.
+
+## Fuentes y sincronización
+
+| Fuente | Cómo se usa | Costo |
+|---|---|---|
+| CSV football-data.co.uk | **Fuentes → Importar CSV**, o `python -m app.cli importar <ruta o URL>` | Gratis |
+| The Odds API | `THE_ODDS_API_KEY`. Calendario (gratis) y cuotas (mercados × regiones créditos) | 500 créditos/mes gratis |
+| football-data.org | `FOOTBALL_DATA_ORG_TOKEN`. Resultados y calendario de 12 ligas (sin Liga MX) | Gratis |
+| API-Football | `API_FOOTBALL_KEY`. Resultados, calendario y cuotas de Liga MX y 1,000+ ligas | 100 solicitudes/día gratis. **El plan gratuito solo da temporadas pasadas**; la actual requiere plan de pago (Pro 19 USD ≈ 350 MXN) |
+
+Desde el dashboard: **Fuentes → Sincronizar proveedor**. Desde la terminal (en `backend/`):
+
+```bash
+.venv/bin/python -m app.cli sincronizar --proveedor api_football --competicion mex_liga_mx --tipo results --temporadas 2022,2023,2024
+.venv/bin/python -m app.cli sincronizar --proveedor the_odds_api --competicion mex_liga_mx --tipo odds
+.venv/bin/python -m app.cli equipos --competicion mex_liga_mx      # equipos sin historial y sugerencias
+.venv/bin/python -m app.cli fusionar --de 41 --en 7                # une un equipo duplicado con el correcto
+.venv/bin/python -m app.cli validar --competicion mex_liga_mx      # informe de validación
+```
+
+Cada llamada queda registrada en **Fuentes** con los créditos consumidos. La plataforma deja de llamar antes de pasarse del límite del plan, y los errores de plan no se reintentan.
+
+**Nombres de equipos.** Cada fuente escribe los nombres distinto ("Club America", "America", "América"). Los alias conocidos están en `data/team_aliases.json`. Si aparece un equipo sin historial, ve a **Fuentes → Revisión de equipos** y fusiónalo con el correcto. El alias queda guardado para las siguientes sincronizaciones.
 
 ## Telegram
 
@@ -67,7 +102,7 @@ Inicio, Cartelera, Oportunidades, Detalle de evento, Rendimiento y validación, 
 ## Pruebas
 
 ```bash
-./scripts/test.sh      # ruff + pytest (107 pruebas) + build del frontend
+./scripts/test.sh      # ruff + pytest (122 pruebas) + build del frontend
 ```
 
 Ninguna prueba usa APIs reales ni consume cuotas: todo el HTTP se simula con `httpx.MockTransport`.

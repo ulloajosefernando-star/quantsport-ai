@@ -19,12 +19,14 @@ Fecha de verificación: 23-oct-2026. Los precios se consultaron en las páginas 
 |---|---|---|---|---|---|
 | Demo sintético interno | Liga ficticia de 16 equipos, 3 temporadas | Resultados y cuotas SINTÉTICOS, etiquetados en toda la interfaz | Sí | — | Completo |
 | football-data.co.uk (CSV) | Ligas europeas, Liga MX (`new/MEX.csv`), MLS | Resultados históricos, cuotas pre-cierre y de cierre | Sí | — | Importador completo (subida desde la web o API) |
-| The Odds API | Fútbol (Liga MX por verificar en `/v4/sports`), NBA, NFL, MLB, tenis | Cuotas actuales de varias casas | Starter: 500 créditos/mes, sin históricos | 20K créditos 30 USD; 100K 59 USD | Adaptador completo, con control de cuota y caché |
+| The Odds API | Fútbol (Liga MX por verificar en `/v4/sports`), NBA, NFL, MLB, tenis | Cuotas actuales y calendario (`/events`, sin coste) | Starter: 500 créditos/mes, sin históricos | 20K créditos 30 USD; 100K 59 USD | Adaptador completo, con control de cuota y caché |
 | football-data.org | 12 competiciones (sin Liga MX) | Calendario y resultados | Free: 10 llamadas/min | Standard 49 EUR; cuotas y estadísticas son extras de 15 EUR | Adaptador completo |
-| API-Football | Liga MX y 1,000+ ligas, alineaciones, lesiones | Calendario, resultados, estadísticas | Free: 100 solicitudes/día | Pro 19 USD, Ultra 29 USD, Mega 39 USD | Pendiente (Fase 3) |
+| API-Football | Liga MX (id 262) y 1,000+ ligas | Calendario, resultados, cuotas | Free: 100 solicitudes/día, **solo temporadas pasadas** (ver nota) | Pro 19 USD, Ultra 29 USD, Mega 39 USD | Adaptador completo (Fase 3) |
 | nflverse, MLB Stats API, NBA, tenis | NFL, MLB, NBA, tenis | Datos de cada deporte | Sí, en general | — | Registrados como pendientes (Fase 2) |
 
 Coste de The Odds API: cada consulta de cuotas cuesta mercados × regiones créditos. Consultar 1X2 y totales en una región cuesta 2 créditos por liga. Con 2 ligas y 2 consultas al día son unos 240 créditos al mes, dentro del plan gratis. Los endpoints `/sports` y `/events` no consumen créditos. La plataforma lee las cabeceras `x-requests-remaining/used/last` y se detiene antes de agotar la cuota.
+
+Nota sobre API-Football: la página de precios confirma 100 solicitudes/día gratis y "todas las competiciones y endpoints", pero no dice qué temporadas incluye. Dos reportes independientes de usuarios (oct-2026) indican que el plan gratuito rechaza la temporada actual con un error `errors.plan` y solo permite temporadas pasadas (2022–2024). El adaptador detecta ese error, lo explica y no lo reintenta. Por eso la ruta gratuita para Liga MX es: histórico de football-data.co.uk + calendario y cuotas de The Odds API.
 
 No se usa scraping ni se elude ningún control de acceso.
 
@@ -33,8 +35,8 @@ No se usa scraping ni se elude ningún control de acceso.
 | Categoría | Opción | MXN/mes | Recomendación |
 |---|---|---|---|
 | Datos deportivos | football-data.org Free + CSV football-data.co.uk | 0 | Recomendado |
-| Datos deportivos | API-Football Free | 0 | Recomendado en Fase 3 |
-| Datos deportivos | API-Football Pro (19 USD) | ≈ 350 | Solo si el plan gratis no alcanza |
+| Datos deportivos | API-Football Free | 0 | Útil solo para históricos (temporadas pasadas) |
+| Datos deportivos | API-Football Pro (19 USD) | ≈ 350 | Solo si necesitas la temporada actual desde API-Football |
 | Cuotas | The Odds API Starter | 0 | Recomendado |
 | Cuotas | The Odds API 20K (30 USD) | ≈ 553 | Excede el presupuesto |
 | Alojamiento | Tu computadora (modo local) | 0 | Recomendado para empezar |
@@ -78,7 +80,7 @@ Un modelo solo produce recomendaciones si supera el control de calidad del merca
 |---|---|---|
 | 1 | Núcleo matemático, fútbol (Dixon-Coles), validación, motor de valor, ranking, dashboard, demo, CSV, The Odds API, football-data.org, envío a Telegram | Hecho |
 | 2 | Modelos NBA, NFL, MLB y tenis (Elo, regresión logística, Poisson por deporte) con sus fuentes gratuitas | Pendiente |
-| 3 | API-Football (Liga MX), alineaciones, lesiones, xG | Pendiente |
+| 3 | API-Football (Liga MX), calendario gratis vía The Odds API, validación con cuotas de cierre, revisión de equipos, CLI de validación | En curso: conectores y herramientas hechos; falta correr la validación con datos reales en tu equipo. Alineaciones, lesiones y xG pendientes |
 | 4 | Mercados adicionales: córners, tarjetas, props | Pendiente |
 | 5 | Comparación de modelos y ensamblado, recalibración (isotónica / Platt) | Pendiente |
 | 6 | Bot de Telegram interactivo: /start /help /today /ranking /football /nba /nfl /mlb /tennis /event /performance /status /settings | Pendiente |
@@ -101,12 +103,13 @@ Completo y probado:
 - Dashboard en español con 8 pantallas y la etiqueta DEMO visible en todo dato sintético.
 - Importación CSV; adaptadores de The Odds API y football-data.org con caché, límite de cuota y registro.
 - Resumen a Telegram (vista previa y envío) con lista blanca, deduplicación y límite diario.
-- 107 pruebas automáticas, ninguna usa APIs reales.
+- Adaptador de API-Football (resultados, calendario, cuotas; detecta restricciones de plan), calendario gratuito desde The Odds API, revisión y fusión de equipos entre fuentes, línea de comandos (`python -m app.cli`).
+- 122 pruebas automáticas, ninguna usa APIs reales.
 
 Pendiente o incompleto:
-- Fútbol queda como parcial: el modelo está validado solo con datos sintéticos y CSV. Falta probarlo con datos reales recientes de Liga MX.
+- Fútbol queda como parcial: las herramientas para validar con datos reales de Liga MX están listas (`scripts/validar_liga_mx.sh`), pero la validación no se ha corrido con datos reales porque el entorno de construcción no tiene acceso a internet.
 - NBA, NFL, MLB y tenis: solo están registrados; no tienen modelo ni datos (no se declaran implementados).
-- API-Football, alineaciones, lesiones, xG, córners y tarjetas.
+- Alineaciones, lesiones, xG, córners y tarjetas.
 - Comandos interactivos de Telegram y programador automático de tareas.
 - Limpieza de tipos con mypy (92 avisos, sin impacto en las pruebas).
 - Imágenes Docker sin construir en este entorno (no había daemon de Docker).

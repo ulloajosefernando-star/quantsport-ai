@@ -1,4 +1,4 @@
-"""Adaptadores PENDIENTES de implementación/configuración (Fase 3).
+"""Adaptadores PENDIENTES de implementación/configuración (Fase 2).
 
 Se registran para que el dashboard muestre qué fuentes están previstas, su coste y su
 estado real. No devuelven datos: cualquier llamada lanza ProviderNotConfigured.
@@ -22,16 +22,6 @@ class PendingProvider(DataProvider):
 
 def pending_providers() -> list[PendingProvider]:
     return [
-        PendingProvider(
-            ProviderInfo(
-                key="api_football", name="API-Football (api-sports.io)", kind=ProviderKind.PENDING,
-                sports=["football"], capabilities=[], configured=False,
-                docs_url="https://www.api-football.com/documentation-v3",
-                cost_note="Gratis: 100 solicitudes/día. Pro: 19 USD/mes (≈ 350 MXN).",
-                coverage_note="Incluye Liga MX, alineaciones y lesiones; temporadas del plan gratuito limitadas.",
-            ),
-            "Adaptador previsto para Fase 3 (calendario Liga MX, alineaciones, lesiones).",
-        ),
         PendingProvider(
             ProviderInfo(
                 key="nflverse", name="nflverse (datasets públicos)", kind=ProviderKind.PENDING,

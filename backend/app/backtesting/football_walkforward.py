@@ -133,15 +133,24 @@ def run(matches: pd.DataFrame, odds: pd.DataFrame, model_cfg: dc.DixonColesConfi
 
     test_start = df.loc[start_idx, "kickoff"]
     end = df["kickoff"].max()
-    fair_1x2 = consensus_fair(odds, "1x2", None, closing=False) if not odds.empty else {}
-    fair_ou = consensus_fair(odds, "totals", 2.5, closing=False) if not odds.empty else {}
-    avg_1x2 = average_odds(odds, "1x2", None, closing=False) if not odds.empty else {}
-    avg_ou = average_odds(odds, "totals", 2.5, closing=False) if not odds.empty else {}
-    close_1x2 = consensus_fair(odds, "1x2", None, closing=True) if not odds.empty else {}
-    close_ou = consensus_fair(odds, "totals", 2.5, closing=True) if not odds.empty else {}
-    fair_bt = consensus_fair(odds, "btts", None, closing=False) if not odds.empty else {}
-    avg_bt = average_odds(odds, "btts", None, closing=False) if not odds.empty else {}
-    close_bt = consensus_fair(odds, "btts", None, closing=True) if not odds.empty else {}
+    def both(fn, market: str, line: float | None) -> tuple[dict, dict]:
+        if odds.empty:
+            return {}, {}
+        return fn(odds, market, line, closing=False), fn(odds, market, line, closing=True)
+
+    # Referencia de mercado: cuotas pre-cierre si existen; si un partido solo tiene cierre (p. ej. Liga MX
+    # en football-data.co.uk), se usa el cierre, que es la referencia más exigente.
+    pre_1x2, close_1x2 = both(consensus_fair, "1x2", None)
+    pre_ou, close_ou = both(consensus_fair, "totals", 2.5)
+    pre_bt, close_bt = both(consensus_fair, "btts", None)
+    avg_pre_1x2, avg_close_1x2 = both(average_odds, "1x2", None)
+    avg_pre_ou, avg_close_ou = both(average_odds, "totals", 2.5)
+    avg_pre_bt, avg_close_bt = both(average_odds, "btts", None)
+
+    def pick(pre: dict, close: dict, ev_id: int) -> dict:
+        return pre.get(ev_id) or close.get(ev_id) or {}
+
+    ref_counts = {"pre_cierre": 0, "cierre": 0, "sin_cuotas": 0}
 
     rows, bets = [], []
     skipped = 0
@@ -174,29 +183,37 @@ def run(matches: pd.DataFrame, odds: pd.DataFrame, model_cfg: dc.DixonColesConfi
                 yover = int(hg + ag > 2)
                 ybtts = int(hg > 0 and ag > 0)
                 ev_id = int(m["event_id"])
+                m1 = pick(pre_1x2, close_1x2, ev_id)
+                ref_counts["pre_cierre" if ev_id in pre_1x2 else "cierre" if ev_id in close_1x2 else "sin_cuotas"] += 1
                 rows.append({
                     "event_id": ev_id, "kickoff": m["kickoff"],
                     "p_home": p["home"], "p_draw": p["draw"], "p_away": p["away"], "p_over": pou["over"],
                     "b_home": base_1x2[0], "b_draw": base_1x2[1], "b_away": base_1x2[2], "b_over": base_over,
-                    "m_home": fair_1x2.get(ev_id, {}).get("home"), "m_draw": fair_1x2.get(ev_id, {}).get("draw"),
-                    "m_away": fair_1x2.get(ev_id, {}).get("away"), "m_over": fair_ou.get(ev_id, {}).get("over"),
-                    "p_btts": pbt["yes"], "b_btts": base_btts, "m_btts": fair_bt.get(ev_id, {}).get("yes"),
+                    "m_home": m1.get("home"), "m_draw": m1.get("draw"), "m_away": m1.get("away"),
+                    "m_over": pick(pre_ou, close_ou, ev_id).get("over"),
+                    "p_btts": pbt["yes"], "b_btts": base_btts, "m_btts": pick(pre_bt, close_bt, ev_id).get("yes"),
                     "y1x2": y1x2, "yover": yover, "ybtts": ybtts,
                 })
-                candidates = [("1x2", s, p[s], avg_1x2.get(ev_id, {}).get(s), close_1x2.get(ev_id, {}).get(s),
-                               (s == "home" and y1x2 == 0) or (s == "draw" and y1x2 == 1) or (s == "away" and y1x2 == 2))
+                won_1x2 = {"home": y1x2 == 0, "draw": y1x2 == 1, "away": y1x2 == 2}
+                candidates = [("1x2", s, p[s], avg_pre_1x2, avg_close_1x2, close_1x2, won_1x2[s])
                               for s in ("home", "draw", "away")]
-                candidates += [("totals_2.5", s, pou[s], avg_ou.get(ev_id, {}).get(s), close_ou.get(ev_id, {}).get(s),
-                                (s == "over") == bool(yover)) for s in ("over", "under")]
-                candidates += [("btts", s, pbt[s], avg_bt.get(ev_id, {}).get(s), close_bt.get(ev_id, {}).get(s),
-                                (s == "yes") == bool(ybtts)) for s in ("yes", "no")]
-                for market, sel, pm, d, p_close, won in candidates:
+                candidates += [("totals_2.5", s, pou[s], avg_pre_ou, avg_close_ou, close_ou, (s == "over") == bool(yover))
+                               for s in ("over", "under")]
+                candidates += [("btts", s, pbt[s], avg_pre_bt, avg_close_bt, close_bt, (s == "yes") == bool(ybtts))
+                               for s in ("yes", "no")]
+                for market, sel, pm, avg_pre, avg_close, fair_close, won in candidates:
+                    d = avg_pre.get(ev_id, {}).get(sel)
+                    taken = "pre_cierre"
+                    if d is None:
+                        d, taken = avg_close.get(ev_id, {}).get(sel), "cierre"
                     if d is None or not (cfg.min_odds <= d <= cfg.max_odds):
                         continue
                     if pm * d - 1 >= cfg.min_ev:
-                        clv = (d * p_close - 1) if p_close else None  # cuota tomada vs cuota justa de cierre
+                        p_close = fair_close.get(ev_id, {}).get(sel)
+                        # CLV: cuota tomada vs cuota justa de cierre (no aplica si se apostó al cierre)
+                        clv = (d * p_close - 1) if (p_close and taken == "pre_cierre") else None
                         bets.append({"event_id": ev_id, "market": market, "selection": sel, "odds": d, "p": pm,
-                                     "profit": d - 1 if won else -1.0, "clv": clv})
+                                     "profit": d - 1 if won else -1.0, "clv": clv, "taken": taken})
         chunk_start = chunk_end
 
     res = pd.DataFrame(rows)
@@ -205,6 +222,7 @@ def run(matches: pd.DataFrame, odds: pd.DataFrame, model_cfg: dc.DixonColesConfi
         "refits": refits, "refit_days": cfg.refit_days,
         "test_period": [test_start.isoformat(), end.isoformat()],
         "leakage_check": "ok: cada reentrenamiento usa solo partidos anteriores al bloque",
+        "market_reference": ref_counts,
     }
     if res.empty:
         out["status"] = "insufficient"
@@ -237,9 +255,13 @@ def run(matches: pd.DataFrame, odds: pd.DataFrame, model_cfg: dc.DixonColesConfi
     synthetic_odds = bool(odds["is_synthetic"].any()) if not odds.empty else False
     out["odds_kind"] = "none" if odds.empty else ("sintetica" if synthetic_odds else "real")
     out["betting"] = betting_summary(pd.DataFrame(bets), cfg.bootstrap, cfg.seed) if bets else {"n_bets": 0}
+    closing_only = ref_counts["cierre"] > 0 and ref_counts["pre_cierre"] == 0
     out["betting"]["note"] = (
         "Sin cuotas históricas: no se mide rentabilidad." if odds.empty else
         "Cuotas SINTÉTICAS: resultado económico hipotético, no evidencia de rentabilidad." if synthetic_odds else
-        "Cuotas históricas reales (media de operadores, pre-cierre con timestamp aproximado)."
+        "Cuotas históricas reales de CIERRE (media de operadores): simula apostar al cierre; el CLV no aplica."
+        if closing_only else
+        "Cuotas históricas reales (media de operadores, pre-cierre con timestamp aproximado; "
+        "cierre cuando no hay pre-cierre)."
     )
     return out

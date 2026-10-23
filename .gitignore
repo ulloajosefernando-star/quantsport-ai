@@ -14,3 +14,4 @@ data/cache/
 data/imports/*
 !data/imports/.gitkeep
 data/backups/
+data/reports/

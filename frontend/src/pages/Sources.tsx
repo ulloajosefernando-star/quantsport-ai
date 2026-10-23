@@ -4,6 +4,7 @@ import { api } from '../services/api'
 import type { ProviderRow } from '../types/api'
 import { Button, Card, ErrorBox, Loading, SyntheticTag } from '../components/ui'
 import { ago, localTime, pct } from '../lib/format'
+import { SyncCard, TeamReviewCard, type CatalogItem } from '../components/SourceTools'
 
 interface Resp {
   providers: ProviderRow[]
@@ -11,6 +12,7 @@ interface Resp {
   coverage: { competition: string; key: string; is_synthetic: boolean; finished: number; scheduled: number; odds_snapshots: number; last_sync: string | null }[]
   recent_calls: { time: string; provider: string; endpoint: string; status: string; http_status: number | null; credits: number; error: string }[]
   csv_files: string[]
+  catalog: CatalogItem[]
 }
 
 const KIND: Record<string, string> = { real: 'API real', dataset: 'Dataset', demo: 'Demo sintético', pending: 'Pendiente' }
@@ -107,6 +109,9 @@ export default function Sources() {
           </table>
         </Card>
       </div>
+
+      <SyncCard catalog={data.catalog} onDone={reload} />
+      <TeamReviewCard competitions={data.coverage.filter((c) => !c.is_synthetic)} onDone={reload} />
 
       <Card title="Cobertura y última sincronización">
         <table className="w-full text-sm">
