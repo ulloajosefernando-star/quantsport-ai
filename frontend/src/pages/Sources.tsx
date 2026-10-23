@@ -28,7 +28,12 @@ export default function Sources() {
     if (!f) return
     setBusy(true)
     try {
-      const r = await api.upload<{ events_created: number; events_updated: number; odds_inserted: number; odds_duplicates: number; warnings: string[] }>('/api/imports/csv', f)
+      const r = await api.upload<{ format?: string; ratings_inserted?: number; unmatched_clubs?: number; events_created: number; events_updated: number; odds_inserted: number; odds_duplicates: number; warnings: string[] }>('/api/imports/csv', f)
+      if (r.format === 'clubelo') {
+        setMsg(`Ratings Club Elo: ${r.ratings_inserted} nuevos; ${r.unmatched_clubs} clubes sin equipo en la base (se ignoran).`)
+        reload()
+        return
+      }
       setMsg(`Importado: ${r.events_created} eventos nuevos, ${r.events_updated} actualizados, ${r.odds_inserted} cuotas (${r.odds_duplicates} duplicadas). ${r.warnings.slice(0, 3).join(' ')}`)
       reload()
     } catch (e) {
@@ -79,7 +84,7 @@ export default function Sources() {
       </Card>
 
       <div className="grid gap-6 lg:grid-cols-2">
-        <Card title="Importar CSV" subtitle="football-data.co.uk (formato principal y 'new': Liga MX, MLS) o formato genérico">
+        <Card title="Importar CSV" subtitle="football-data.co.uk (formato principal y 'new': Liga MX, MLS) o formato genérico. También ratings de Club Elo (CSV descargado de api.clubelo.com).">
           <div className="flex flex-wrap items-center gap-3">
             <input ref={fileRef} type="file" accept=".csv" className="text-xs text-ink-300 file:mr-3 file:rounded-md file:border-0 file:bg-ink-800 file:px-3 file:py-1.5 file:text-ink-100" />
             <Button variant="primary" onClick={upload} disabled={busy}>Importar</Button>

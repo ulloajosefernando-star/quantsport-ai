@@ -14,27 +14,33 @@ _STOPWORDS = {"fc", "cf", "cd", "club", "afc", "sc", "ac", "ssc", "as", "the", "
 # Competiciones canónicas: clave interna -> metadatos y códigos por proveedor.
 COMPETITIONS: dict[str, dict] = {
     "eng_premier_league": {
-        "api_football": 39, "name": "Premier League", "country": "Inglaterra",
+        "api_football": 39, "openfootball": "en.1", "tz": "Europe/London",
+        "name": "Premier League", "country": "Inglaterra",
         "fdcouk": "E0", "fdorg": "PL", "odds_api": "soccer_epl",
     },
     "eng_championship": {
-        "api_football": 40, "name": "Championship", "country": "Inglaterra",
+        "api_football": 40, "openfootball": "en.2", "tz": "Europe/London",
+        "name": "Championship", "country": "Inglaterra",
         "fdcouk": "E1", "fdorg": "ELC", "odds_api": "soccer_efl_champ",
     },
     "esp_la_liga": {
-        "api_football": 140, "name": "La Liga", "country": "España",
+        "api_football": 140, "openfootball": "es.1", "tz": "Europe/Madrid",
+        "name": "La Liga", "country": "España",
         "fdcouk": "SP1", "fdorg": "PD", "odds_api": "soccer_spain_la_liga",
     },
     "ita_serie_a": {
-        "api_football": 135, "name": "Serie A", "country": "Italia",
+        "api_football": 135, "openfootball": "it.1", "tz": "Europe/Rome",
+        "name": "Serie A", "country": "Italia",
         "fdcouk": "I1", "fdorg": "SA", "odds_api": "soccer_italy_serie_a",
     },
     "ger_bundesliga": {
-        "api_football": 78, "name": "Bundesliga", "country": "Alemania",
+        "api_football": 78, "openfootball": "de.1", "tz": "Europe/Berlin",
+        "name": "Bundesliga", "country": "Alemania",
         "fdcouk": "D1", "fdorg": "BL1", "odds_api": "soccer_germany_bundesliga",
     },
     "fra_ligue_1": {
-        "api_football": 61, "name": "Ligue 1", "country": "Francia",
+        "api_football": 61, "openfootball": "fr.1", "tz": "Europe/Paris",
+        "name": "Ligue 1", "country": "Francia",
         "fdcouk": "F1", "fdorg": "FL1", "odds_api": "soccer_france_ligue_one",
     },
     "ned_eredivisie": {"api_football": 88, "name": "Eredivisie", "country": "Países Bajos", "fdcouk": "N1", "fdorg": "DED"},

@@ -30,6 +30,7 @@ from app.db.models import (
     Settlement,
     Team,
     TeamAlias,
+    TeamRating,
 )
 from app.ingestion.store import MATCH_WINDOW, as_utc
 from app.providers.normalize import known_aliases, slug
@@ -176,6 +177,12 @@ def merge(s: Session, from_team_id: int, into_team_id: int) -> dict:
     if ("manual", src.name) not in known:
         s.add(TeamAlias(team_id=dst.id, source="manual", alias=src.name))
     s.execute(update(Player).where(Player.team_id == src.id).values(team_id=dst.id))
+    kept = {(r.source, r.valid_from) for r in s.scalars(select(TeamRating).where(TeamRating.team_id == dst.id))}
+    for r in list(s.scalars(select(TeamRating).where(TeamRating.team_id == src.id))):
+        if (r.source, r.valid_from) in kept:
+            s.delete(r)
+        else:
+            r.team_id = dst.id
     s.flush()
     remaining = s.scalar(select(func.count(Event.id)).where(
         or_(Event.home_team_id == src.id, Event.away_team_id == src.id)))

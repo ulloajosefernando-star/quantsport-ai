@@ -75,6 +75,8 @@ Qué esperar con datos gratuitos:
 | CSV football-data.co.uk | **Fuentes → Importar CSV**, o `python -m app.cli importar <ruta o URL>` | Gratis |
 | The Odds API | `THE_ODDS_API_KEY`. Calendario (gratis) y cuotas (mercados × regiones créditos) | 500 créditos/mes gratis |
 | football-data.org | `FOOTBALL_DATA_ORG_TOKEN`. Resultados y calendario de 12 ligas (sin Liga MX) | Gratis |
+| openfootball | Sin clave. Resultados y calendario de Inglaterra (1.ª y 2.ª), España, Alemania, Italia y Francia; sirve para cruzar resultados entre fuentes (avisa si no coinciden) | Gratis, dominio público |
+| Club Elo | Descarga el CSV en tu navegador (p. ej. `http://api.clubelo.com/2026-10-23`) y súbelo en **Importar CSV**. Se muestra como referencia externa en el detalle de cada partido; no entra en el modelo. Solo clubes europeos | Gratis. Importación manual porque su robots.txt no permite descargas automáticas |
 | API-Football | `API_FOOTBALL_KEY`. Resultados, calendario y cuotas de Liga MX y 1,000+ ligas | 100 solicitudes/día gratis. **El plan gratuito solo da temporadas pasadas**; la actual requiere plan de pago (Pro 19 USD ≈ 350 MXN) |
 
 Desde el dashboard: **Fuentes → Sincronizar proveedor**. Desde la terminal (en `backend/`):
@@ -102,7 +104,7 @@ Inicio, Cartelera, Oportunidades, Detalle de evento, Rendimiento y validación, 
 ## Pruebas
 
 ```bash
-./scripts/test.sh      # ruff + pytest (122 pruebas) + build del frontend
+./scripts/test.sh      # ruff + pytest (130 pruebas) + build del frontend
 ```
 
 Ninguna prueba usa APIs reales ni consume cuotas: todo el HTTP se simula con `httpx.MockTransport`.

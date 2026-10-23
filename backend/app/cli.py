@@ -6,6 +6,8 @@ Ejemplos (desde backend/):
     python -m app.cli equipos --competicion mex_liga_mx
     python -m app.cli fusionar --de 41 --en 7
     python -m app.cli validar --competicion mex_liga_mx
+    python -m app.cli sincronizar --proveedor openfootball --competicion esp_la_liga --tipo results --temporadas 2024,2025
+    python -m app.cli importar ~/Descargas/clubelo_2026-10-23.csv     # ratings Club Elo descargados a mano
 
 Nada se contrata ni se apuesta: los comandos solo leen fuentes configuradas y calculan.
 """
@@ -29,7 +31,7 @@ from app.db.session import session_scope
 from app.ingestion import jobs, teams
 from app.ingestion.store import Ingestor, seed_sports
 from app.providers.base import ProviderError
-from app.providers.registry import get_provider
+from app.providers.registry import SEASON_AWARE, get_provider
 from app.reporting.validation_report import build_markdown
 from app.sports.football.service import football_service
 
@@ -76,6 +78,10 @@ def cmd_importar(a: argparse.Namespace) -> int:
     content, name = _read_source(a.fuente)
     with session_scope() as s:
         rep = jobs.import_csv(s, content, name)
+    if rep.get("format") == "clubelo":
+        print(f"Ratings Club Elo: {rep['ratings_inserted']} nuevos ({rep['ratings_duplicates']} duplicados), "
+              f"{rep['unmatched_clubs']} clubes sin equipo en la base")
+        return 0
     print(f"Eventos nuevos: {rep['events_created']} · actualizados: {rep['events_updated']} · "
           f"cuotas nuevas: {rep['odds_inserted']} (duplicadas: {rep['odds_duplicates']})")
     for w in rep.get("warnings", [])[:10]:
@@ -92,7 +98,7 @@ def cmd_sincronizar(a: argparse.Namespace) -> int:
     code = 0
     for season in seasons:
         fn = {"results": p.fetch_results, "fixtures": p.fetch_fixtures, "odds": p.fetch_odds}[a.tipo]
-        kwargs = {"season": season} if season and (a.tipo == "results" or a.proveedor == "api_football") else {}
+        kwargs = {"season": season} if season and (a.tipo == "results" or a.proveedor in SEASON_AWARE) else {}
         try:
             batch = fn(a.competicion, **kwargs)
         except ProviderError as exc:
@@ -160,7 +166,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("fuente")
     p.set_defaults(fn=cmd_importar)
     p = sub.add_parser("sincronizar", help="Descarga datos de un proveedor configurado en .env")
-    p.add_argument("--proveedor", required=True, choices=["api_football", "the_odds_api", "football_data_org"])
+    p.add_argument("--proveedor", required=True, choices=["api_football", "the_odds_api", "football_data_org", "openfootball"])
     p.add_argument("--competicion", required=True)
     p.add_argument("--tipo", default="results", choices=["results", "fixtures", "odds"])
     p.add_argument("--temporadas", help="Lista separada por comas, p. ej. 2022,2023,2024")

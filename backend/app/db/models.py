@@ -330,3 +330,17 @@ class AppSetting(Base):
     key: Mapped[str] = mapped_column(String(64), primary_key=True)
     value: Mapped[dict] = mapped_column(JSON)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+
+class TeamRating(Base):
+    """Rating externo de un equipo (p. ej. Club Elo) vigente en un rango de fechas. Solo referencia."""
+
+    __tablename__ = "team_ratings"
+    __table_args__ = (UniqueConstraint("team_id", "source", "valid_from"),)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    team_id: Mapped[int] = mapped_column(ForeignKey("teams.id"), index=True)
+    source: Mapped[str] = mapped_column(String(64))
+    rating: Mapped[float] = mapped_column(Float)
+    valid_from: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    valid_to: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    imported_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

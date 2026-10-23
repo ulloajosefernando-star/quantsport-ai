@@ -22,13 +22,16 @@ Fecha de verificación: 23-oct-2026. Los precios se consultaron en las páginas 
 | The Odds API | Fútbol (Liga MX por verificar en `/v4/sports`), NBA, NFL, MLB, tenis | Cuotas actuales y calendario (`/events`, sin coste) | Starter: 500 créditos/mes, sin históricos | 20K créditos 30 USD; 100K 59 USD | Adaptador completo, con control de cuota y caché |
 | football-data.org | 12 competiciones (sin Liga MX) | Calendario y resultados | Free: 10 llamadas/min | Standard 49 EUR; cuotas y estadísticas son extras de 15 EUR | Adaptador completo |
 | API-Football | Liga MX (id 262) y 1,000+ ligas | Calendario, resultados, cuotas | Free: 100 solicitudes/día, **solo temporadas pasadas** (ver nota) | Pro 19 USD, Ultra 29 USD, Mega 39 USD | Adaptador completo (Fase 3) |
+| openfootball (football.json) | Inglaterra 1.ª/2.ª, España, Alemania, Italia, Francia (sin Liga MX) | Resultados y calendario; se usa para cruzar resultados con otras fuentes | Sí, dominio público | — | Adaptador completo |
+| Club Elo | Clubes europeos (sin Liga MX) | Ratings Elo diarios; referencia externa en el detalle de cada partido, no entra en el modelo | Sí | — | Importación manual de CSV (su robots.txt no permite descargas automáticas) |
+| TheSportsDB | Incluye Liga MX | Calendario y resultados, sin cuotas | Clave de prueba con límites muy bajos (15 partidos por consulta de temporada) | 9 USD/mes (≈ 166 MXN) | No integrado; opcional si se decide pagar |
 | nflverse, MLB Stats API, NBA, tenis | NFL, MLB, NBA, tenis | Datos de cada deporte | Sí, en general | — | Registrados como pendientes (Fase 2) |
 
 Coste de The Odds API: cada consulta de cuotas cuesta mercados × regiones créditos. Consultar 1X2 y totales en una región cuesta 2 créditos por liga. Con 2 ligas y 2 consultas al día son unos 240 créditos al mes, dentro del plan gratis. Los endpoints `/sports` y `/events` no consumen créditos. La plataforma lee las cabeceras `x-requests-remaining/used/last` y se detiene antes de agotar la cuota.
 
 Nota sobre API-Football: la página de precios confirma 100 solicitudes/día gratis y "todas las competiciones y endpoints", pero no dice qué temporadas incluye. Dos reportes independientes de usuarios (oct-2026) indican que el plan gratuito rechaza la temporada actual con un error `errors.plan` y solo permite temporadas pasadas (2022–2024). El adaptador detecta ese error, lo explica y no lo reintenta. Por eso la ruta gratuita para Liga MX es: histórico de football-data.co.uk + calendario y cuotas de The Odds API.
 
-No se usa scraping ni se elude ningún control de acceso.
+No se usa scraping ni se elude ningún control de acceso. Se descartaron ESPN, SofaScore, FBref, Understat, FotMob y Transfermarkt: son APIs no oficiales o requieren scraping.
 
 ## 3. Estimación de costes mensuales (MXN)
 
@@ -104,7 +107,8 @@ Completo y probado:
 - Importación CSV; adaptadores de The Odds API y football-data.org con caché, límite de cuota y registro.
 - Resumen a Telegram (vista previa y envío) con lista blanca, deduplicación y límite diario.
 - Adaptador de API-Football (resultados, calendario, cuotas; detecta restricciones de plan), calendario gratuito desde The Odds API, revisión y fusión de equipos entre fuentes, línea de comandos (`python -m app.cli`).
-- 122 pruebas automáticas, ninguna usa APIs reales.
+- Fuentes gratuitas adicionales: openfootball (resultados de 6 ligas europeas, dominio público) y ratings de Club Elo como referencia externa.
+- 130 pruebas automáticas, ninguna usa APIs reales.
 
 Pendiente o incompleto:
 - Fútbol queda como parcial: las herramientas para validar con datos reales de Liga MX están listas (`scripts/validar_liga_mx.sh`), pero la validación no se ha corrido con datos reales porque el entorno de construcción no tiene acceso a internet.

@@ -19,6 +19,7 @@ from app.db.models import BacktestRun, CalibrationReport, Competition, Event, Mo
 from app.ingestion.store import as_utc
 from app.probability.margin import compare_methods
 from app.probability.settlement import binary_distribution
+from app.providers import clubelo
 from app.sports.football import dixon_coles as dc
 from app.sports.football.data import consensus_fair, finished, matches_frame, odds_frame
 from app.sports.football.scores import (
@@ -202,6 +203,7 @@ class FootballService:
                     f"Último resultado usado: {st.last_result_at.date()} (más de {th.max_data_age_days} días "
                     "antes del partido). Posibles cambios de plantilla no reflejados."
                 )
+        out["external_ratings"] = _external_ratings(s, ev, kickoff)
         out["data_quality"] = {
             "last_result_used": st.last_result_at.isoformat() if st.last_result_at else None,
             "issues": issues,
@@ -239,6 +241,12 @@ class FootballService:
             "away": [float(np.quantile(mu_s, 0.05)), float(np.quantile(mu_s, 0.95))],
         }
         out["factors"] = _factors(m, home, away, sm)
+        ext = out["external_ratings"]
+        if ext:
+            p1 = out["probabilities"]["1x2"]
+            ext["model_expectancy"] = float(p1["home"] + 0.5 * p1["draw"])
+            ext["gap"] = ext["model_expectancy"] - ext["expectancy_neutral"]
+            ext["discrepancy"] = abs(ext["gap"]) > ELO_DISCREPANCY
 
         selections = self._selections(sm, sampled, p_samples, live, kickoff)
         data_issues = [i for i in issues if "Último resultado" in i]
@@ -335,6 +343,21 @@ class FootballService:
 
 
 # ------------------------------------------------------------------ helpers
+ELO_DISCREPANCY = 0.20  # el modelo incluye localía y Elo neutral no: ~0.05-0.10 de diferencia es normal
+
+
+def _external_ratings(s: Session, ev: Event, kickoff: datetime) -> dict | None:
+    """Club Elo como referencia externa (no entra en el modelo ni en la categoría de valor)."""
+    h, a = clubelo.rating_at(s, ev.home_team_id, kickoff), clubelo.rating_at(s, ev.away_team_id, kickoff)
+    if h is None or a is None:
+        return None
+    diff = h - a
+    return {"source": "Club Elo", "home": h, "away": a, "diff": diff,
+            "expectancy_neutral": 1.0 / (1.0 + 10 ** (-diff / 400.0)),
+            "note": "Expectativa Elo en campo neutral (victoria = 1, empate = 0.5). Referencia externa: "
+                    "no se usa para calcular probabilidades ni oportunidades."}
+
+
 def _factors(m: dc.DixonColesModel, home: str, away: str, sm: ScoreMatrix) -> list[dict]:
     ih, ia = m.index[home], m.index[away]
     return [

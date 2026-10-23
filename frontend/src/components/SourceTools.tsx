@@ -5,12 +5,13 @@ import { Button, Card, Select } from './ui'
 export interface CatalogItem { key: string; name: string; country: string; providers: string[] }
 
 const PROVIDER_LABEL: Record<string, string> = {
-  api_football: 'API-Football', the_odds_api: 'The Odds API', football_data_org: 'football-data.org',
+  api_football: 'API-Football', the_odds_api: 'The Odds API', football_data_org: 'football-data.org', openfootball: 'openfootball',
 }
 const KIND_LABEL: Record<string, string> = { results: 'Resultados', fixtures: 'Calendario', odds: 'Cuotas' }
 // Qué puede pedir cada proveedor
 const KINDS: Record<string, string[]> = {
   api_football: ['results', 'fixtures', 'odds'], the_odds_api: ['odds', 'fixtures'], football_data_org: ['results', 'fixtures'],
+  openfootball: ['results', 'fixtures'],
 }
 
 export function SyncCard({ catalog, onDone }: { catalog: CatalogItem[]; onDone: () => void }) {
@@ -41,7 +42,7 @@ export function SyncCard({ catalog, onDone }: { catalog: CatalogItem[]; onDone: 
       setBusy(false)
     }
   }
-  const showSeason = provider === 'api_football' || kind === 'results'
+  const showSeason = provider === 'api_football' || provider === 'openfootball' || kind === 'results'
   return (
     <Card title="Sincronizar proveedor" subtitle="Cada solicitud descuenta de la cuota del plan; las respuestas se guardan en caché.">
       <div className="flex flex-wrap items-end gap-3">

@@ -32,7 +32,7 @@ from app.probability.margin import compare_methods
 from app.probability.odds import InvalidOddsError, decimal_to_american, decimal_to_fractional, to_decimal
 from app.providers.base import ProviderError
 from app.providers.normalize import COMPETITIONS
-from app.providers.registry import all_providers, get_provider
+from app.providers.registry import SEASON_AWARE, all_providers, get_provider
 from app.ranking.ranker import RankingFilters, analyze_upcoming, build_ranking, flatten, upcoming_events
 from app.reporting import budget, predictions
 from app.sports.football.service import football_service
@@ -255,7 +255,8 @@ def sources(db: Session = Depends(get_db), settings: Settings = Depends(get_sett
         "catalog": [{"key": k, "name": m["name"], "country": m.get("country", ""),
                      "providers": [prov for prov, field in (("api_football", "api_football"),
                                                             ("the_odds_api", "odds_api"),
-                                                            ("football_data_org", "fdorg")) if m.get(field)]}
+                                                            ("football_data_org", "fdorg"),
+                                                            ("openfootball", "openfootball")) if m.get(field)]}
                     for k, m in COMPETITIONS.items()],
     }
 
@@ -309,7 +310,7 @@ def provider_sync(key: str, competition: str, kind: str = Query("odds", pattern=
     if p is None:
         raise HTTPException(404, "Proveedor desconocido")
     fn = {"odds": p.fetch_odds, "results": p.fetch_results, "fixtures": p.fetch_fixtures}[kind]
-    kwargs = {"season": season} if season and (kind == "results" or key == "api_football") else {}
+    kwargs = {"season": season} if season and (kind == "results" or key in SEASON_AWARE) else {}
     try:
         batch = fn(competition, **kwargs)
     except ProviderError as exc:

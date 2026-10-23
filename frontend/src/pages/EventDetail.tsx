@@ -34,6 +34,7 @@ interface EventAnalysis {
   factors: { factor: string; home: number | null; away: number | null; detail: string }[]
   limitations: string[]
   data_quality: { last_result_used: string | null; issues: string[]; event_fetched_at: string | null }
+  external_ratings?: { source: string; home: number; away: number; diff: number; expectancy_neutral: number; model_expectancy?: number; gap?: number; discrepancy?: boolean; note: string } | null
   odds_table: { bookmaker: string; market: string; line: number | null; selection: string; odds: number; captured_at: string; source: string }[]
   odds_history: { captured_at: string; bookmaker: string; selection: string; odds: number }[]
   margin_analysis: { bookmaker: string; overround: number; methods: Record<string, Record<string, number>>; max_disagreement: number }[]
@@ -180,6 +181,18 @@ export default function EventDetail() {
               ))}
             </tbody>
           </table>
+          {data.external_ratings && (
+            <div className={`mt-4 rounded-md border p-3 text-sm ${data.external_ratings.discrepancy ? 'border-amber-500/40 bg-amber-500/5' : 'border-ink-700'}`}>
+              <div className="mb-1 font-medium">Referencia externa · {data.external_ratings.source}</div>
+              <div className="num">Elo {num(data.external_ratings.home, 0)} vs {num(data.external_ratings.away, 0)} (diferencia {data.external_ratings.diff > 0 ? '+' : ''}{num(data.external_ratings.diff, 0)})</div>
+              <div className="num text-xs text-ink-300">
+                Expectativa Elo neutral {pct(data.external_ratings.expectancy_neutral)}
+                {data.external_ratings.model_expectancy != null && <> · modelo (con localía) {pct(data.external_ratings.model_expectancy)}</>}
+              </div>
+              {data.external_ratings.discrepancy && <div className="mt-1 text-xs text-amber-200">El modelo y Club Elo discrepan mucho: revisa plantilla, lesiones o nombres de equipos antes de confiar en este análisis.</div>}
+              <div className="mt-1 text-[11px] text-ink-400">{data.external_ratings.note}</div>
+            </div>
+          )}
         </Card>
         <Card title="Modelo y limitaciones">
           {data.model && (
