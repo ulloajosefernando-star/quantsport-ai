@@ -1,0 +1,27 @@
+[project]
+name = "quantsport-ai"
+version = "0.1.0"
+description = "Plataforma de análisis cuantitativo deportivo (análisis probabilístico, no garantía de resultado)"
+requires-python = ">=3.12"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+filterwarnings = ["ignore::DeprecationWarning"]
+
+[tool.ruff]
+line-length = 130
+target-version = "py312"
+extend-exclude = ["migrations/versions"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "SIM", "RUF"]
+ignore = ["RUF001", "RUF002", "RUF003", "B008", "E731", "SIM108"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["B017", "E501"]
+
+[tool.mypy]
+python_version = "3.12"
+ignore_missing_imports = true
+check_untyped_defs = false
