@@ -174,6 +174,7 @@ def monthly_plan_text() -> str:
 
 
 def cmd_programador(a: argparse.Namespace) -> int:
+    import signal
     import time
 
     settings = get_settings()
@@ -186,6 +187,8 @@ def cmd_programador(a: argparse.Namespace) -> int:
     for j in scheduler_runner.next_runs():
         print(f"  {j['id']}: próxima {j['next_run']}")
     print("Programador en marcha. Ctrl+C para detenerlo.")
+    # systemd y kill mandan SIGTERM: se trata igual que Ctrl+C para cerrar el programador en orden
+    signal.signal(signal.SIGTERM, signal.default_int_handler)
     try:
         while True:
             time.sleep(60)
