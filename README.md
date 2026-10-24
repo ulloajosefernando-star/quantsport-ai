@@ -127,6 +127,8 @@ Funciona mientras el backend esté encendido, o en una terminal aparte con `pyth
 
 Cada tarea se ejecuta una sola vez por periodo, aunque reinicies. Antes de cada consulta de pago revisa el presupuesto mensual de créditos y deja una reserva (`SCHEDULER_CREDIT_RESERVE`). Si no alcanza, omite esa consulta y sigue con los pasos gratuitos. El plan por defecto usa unos 282 de los 500 créditos gratis. Estado, plan de créditos y botones para ejecutar a mano: **Fuentes de datos → Programador automático**, o `python -m app.cli tarea diaria|cuotas|previa`.
 
+Para que corra sin depender de tu equipo, instálalo en un servidor Linux con `scripts/instalar_servidor.sh`: [docs/SERVIDOR.md](docs/SERVIDOR.md).
+
 El programador nunca apuesta, no deposita y no inicia sesión en ninguna casa.
 
 ## Telegram
