@@ -100,10 +100,10 @@ def _merge_duplicate_event(s: Session, dup: Event, keep: Event) -> dict:
         keep.status = dup.status
     if keep.source.startswith("csv") and not dup.source.startswith("csv"):
         keep.kickoff_utc = dup.kickoff_utc  # la API tiene la hora exacta
-    existing = {(o.bookmaker, o.market, o.line, o.selection, as_utc(o.captured_at), o.source)
+    existing = {(o.bookmaker, o.market, o.period, o.participant, o.line, o.selection, as_utc(o.captured_at), o.source)
                 for o in s.scalars(select(OddsSnapshot).where(OddsSnapshot.event_id == keep.id))}
     for o in list(s.scalars(select(OddsSnapshot).where(OddsSnapshot.event_id == dup.id))):
-        key = (o.bookmaker, o.market, o.line, o.selection, as_utc(o.captured_at), o.source)
+        key = (o.bookmaker, o.market, o.period, o.participant, o.line, o.selection, as_utc(o.captured_at), o.source)
         if key in existing:
             s.delete(o)
             moved["odds_duplicates"] += 1

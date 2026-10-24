@@ -93,11 +93,20 @@ Cada llamada queda registrada en **Fuentes** con los créditos consumidos. La pl
 
 **Nombres de equipos.** Cada fuente escribe los nombres distinto ("Club America", "America", "América"). Los alias conocidos están en `data/team_aliases.json`. Si aparece un equipo sin historial, ve a **Fuentes → Revisión de equipos** y fusiónalo con el correcto. El alias queda guardado para las siguientes sincronizaciones.
 
-## Cuotas de Playdoit u otra casa (captura manual)
+## Cuotas y mercados
 
-La plataforma no se conecta a casas de apuestas como Playdoit: no tienen API pública y leer su sitio sería scraping. En su lugar, abre el partido en **Cartelera → detalle** y usa **Evaluar una cuota que viste en otra casa**: eliges la selección, escribes la cuota (decimal o americana) y la plataforma te dice probabilidad del modelo, cuota justa, cuota mínima, EV y stake sugerido, y la compara con las demás casas.
+La pantalla **Cuotas y mercados** muestra cada mercado con cuota (de cualquier fuente):
+- Probabilidad implícita y margen.
+- Probabilidad sin margen, con método proporcional, potencia o Shin.
+- Probabilidad del modelo y cuota justa.
+- Edge y EV.
+- Incertidumbre y calidad de datos.
 
-La cuota queda guardada con origen `manual` y aparece en la tabla de cuotas y en el ranking como una casa más. No entra en el consenso del mercado (la referencia sin margen), para que una cuota tecleada no mueva la referencia. Si el mercado está bloqueado o la evidencia es débil, la respuesta sigue siendo NO BET.
+Filtra por deporte, competición, evento, mercado, rango de cuota, probabilidad implícita, EV y edge. Elige el formato de cuota: decimal, americano, fraccionario o porcentaje. Incluye una calculadora: escribes una cuota en cualquier formato y, si das tu probabilidad, te devuelve EV, cuota justa y stake.
+
+Hay 70 mercados registrados en fútbol, NBA, NFL, MLB y tenis. Hoy solo fútbol tiene modelo, y cubre 10 mercados. En los demás la plataforma muestra implícita y margen, y dice que no hay modelo en vez de inventar una probabilidad. Fórmulas, ejemplos y cobertura: [docs/CUOTAS_Y_MERCADOS.md](docs/CUOTAS_Y_MERCADOS.md).
+
+**Captura manual.** La plataforma no se conecta a ninguna casa de apuestas. Para evaluar una cuota que ves en cualquier casa o fuente, abre el partido en **Cartelera → detalle** y usa **Evaluar una cuota de cualquier casa o fuente**. La cuota queda guardada con origen `manual` y no entra en el consenso del mercado. Si la evidencia es débil, la respuesta sigue siendo NO BET.
 
 ## Telegram
 
@@ -110,7 +119,7 @@ Inicio, Cartelera, Oportunidades, Detalle de evento, Rendimiento y validación, 
 ## Pruebas
 
 ```bash
-./scripts/test.sh      # ruff + pytest (139 pruebas) + build del frontend
+./scripts/test.sh      # ruff + pytest (211 pruebas) + build del frontend
 ```
 
 Ninguna prueba usa APIs reales ni consume cuotas: todo el HTTP se simula con `httpx.MockTransport`.

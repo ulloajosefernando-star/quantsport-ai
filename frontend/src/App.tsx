@@ -8,6 +8,7 @@ import Performance from './pages/Performance'
 import Sources from './pages/Sources'
 import Settings from './pages/Settings'
 import Tools from './pages/Tools'
+import Markets from './pages/Markets'
 
 export default function App() {
   return (
@@ -21,6 +22,7 @@ export default function App() {
           <Route path="/rendimiento" element={<Performance />} />
           <Route path="/fuentes" element={<Sources />} />
           <Route path="/configuracion" element={<Settings />} />
+          <Route path="/mercados" element={<Markets />} />
           <Route path="/herramientas" element={<Tools />} />
           <Route path="*" element={<p className="text-ink-400">Página no encontrada.</p>} />
         </Route>

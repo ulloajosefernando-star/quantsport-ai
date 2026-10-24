@@ -98,8 +98,8 @@ class NormalizedOdds:
     home: str
     away: str
     bookmaker: str
-    market: str  # 1x2 | totals | btts | ah | dnb
-    selection: str  # home|draw|away|over|under|yes|no
+    market: str  # clave de app.markets.registry (1x2, totals, btts, ah, dnb, ...)
+    selection: str  # home|draw|away|over|under|yes|no|...
     odds_decimal: float
     captured_at: datetime
     source: str
@@ -107,6 +107,11 @@ class NormalizedOdds:
     is_closing: bool = False
     is_synthetic: bool = False
     source_event_id: str = ""
+    period: str = "ft"
+    participant: str | None = None
+    is_live: bool = False
+    original_format: str | None = None
+    original_value: str | None = None
 
 
 @dataclass

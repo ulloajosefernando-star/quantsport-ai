@@ -1,4 +1,4 @@
-"""Captura manual de cuotas vistas en otra casa (p. ej. Playdoit): se guardan y se evalúan, nada más."""
+"""Captura manual de cuotas de cualquier casa o fuente: se guardan y se evalúan, nada más."""
 
 from datetime import UTC, datetime
 
@@ -27,20 +27,24 @@ def next_event(session) -> Event:
 def test_manual_odds_saved_and_assessed(client, session):
     ev = next_event(session)
     r = client.post(f"/api/events/{ev.id}/manual-odds",
-                    json={"bookmaker": "Playdoit", "market": "1x2", "selection": "home", "odds": "+150",
+                    json={"bookmaker": "Casa X", "market": "1x2", "selection": "home", "odds": "+150",
                           "format": "american"})
     assert r.status_code == 200, r.text
     d = r.json()
-    assert d["bookmaker"] == "Playdoit" and d["odds_decimal"] == pytest.approx(2.5)
-    a = d["assessment"]
-    assert a["bookmaker"] == "Playdoit" and a["odds"] == pytest.approx(2.5) and a["n_offers"] == 1
-    assert a["is_synthetic"] is True and "ev" in a and "min_odds" in a
+    assert d["bookmaker"] == "Casa X" and d["odds_decimal"] == pytest.approx(2.5)
+    assert d["conversions"]["fractional"] == "3/2" and d["format"] == "american"
+    a = d["evaluation"]
+    assert a["quote"]["bookmaker"] == "Casa X" and a["quote"]["odds_decimal"] == pytest.approx(2.5)
+    assert a["quote"]["original_value"] == "+150" and a["implied_probability"] == pytest.approx(0.4)
+    assert a["data_quality"]["is_synthetic"] is True and a["ev"] is not None and a["min_odds"] is not None
+    assert d["margin"]["available"] is False  # solo se capturó una selección
     snap = session.scalar(select(OddsSnapshot).where(OddsSnapshot.event_id == ev.id,
                                                      OddsSnapshot.source == MANUAL_SOURCE))
-    assert snap.bookmaker == "Playdoit" and snap.is_closing is False and snap.is_synthetic is True
+    assert snap.bookmaker == "Casa X" and snap.is_closing is False and snap.is_synthetic is True
+    assert snap.original_format == "american" and snap.period == "ft"
     # Aparece en el detalle como una casa más, marcada con su origen
     rows = client.get(f"/api/events/{ev.id}").json()["odds_table"]
-    assert any(x["bookmaker"] == "Playdoit" and x["source"] == MANUAL_SOURCE for x in rows)
+    assert any(x["bookmaker"] == "Casa X" and x["source"] == MANUAL_SOURCE for x in rows)
 
 
 def test_manual_totals_needs_line(client, session):
@@ -51,7 +55,7 @@ def test_manual_totals_needs_line(client, session):
     assert client.post(url, json={**base, "line": 2.3}).status_code == 400
     r = client.post(url, json={**base, "line": 2.5, "bookmaker": "Mi casa <script>"})
     assert r.status_code == 200 and r.json()["bookmaker"] == "Mi casa script"
-    assert r.json()["assessment"]["line"] == 2.5
+    assert r.json()["evaluation"]["selection"]["label"].endswith("2.5")
 
 
 @pytest.mark.parametrize("body", [
@@ -59,7 +63,12 @@ def test_manual_totals_needs_line(client, session):
     {"market": "1x2", "selection": "home", "odds": "1.0"},          # cuota imposible
     {"market": "1x2", "selection": "home", "odds": "abc"},
     {"market": "1x2", "selection": "home", "odds": "50", "format": "american"},  # americana entre -100 y +100
+    {"market": "1x2", "selection": "home", "odds": "120%"},
     {"market": "1x2", "selection": "home", "odds": "2.0", "bookmaker": "<>"},
+    {"market": "corners_totals", "selection": "over", "odds": "2.0", "line": 9.3},  # línea fuera de paso
+    {"market": "next_goal", "selection": "home", "odds": "2.0"},    # mercado en vivo
+    {"market": "moneyline", "selection": "home", "odds": "2.0"},    # mercado de otro deporte
+    {"market": "1x2", "selection": "home", "odds": "3/0"},          # división entre cero
 ])
 def test_manual_odds_rejects_bad_input(client, session, body):
     ev = next_event(session)
@@ -78,8 +87,24 @@ def test_manual_odds_excluded_from_market_consensus():
     rows = [{"event_id": 1, "bookmaker": "A", "market": "1x2", "line": None, "selection": s, "odds": o,
              "captured_at": now, "is_closing": False, "source": "the_odds_api"}
             for s, o in (("home", 2.0), ("draw", 3.4), ("away", 3.8))]
-    rows.append({"event_id": 1, "bookmaker": "Playdoit", "market": "1x2", "line": None, "selection": "home",
+    rows.append({"event_id": 1, "bookmaker": "Captura", "market": "1x2", "line": None, "selection": "home",
                  "odds": 9.0, "captured_at": now, "is_closing": False, "source": MANUAL_SOURCE})
     df = pd.DataFrame(rows)
     assert average_odds(df, "1x2", None, False)[1]["home"] == pytest.approx(2.0)
     assert sum(consensus_fair(df, "1x2", None, False)[1].values()) == pytest.approx(1.0)
+
+
+def test_manual_full_market_gets_margin_and_unsupported_market_explains(client, session):
+    ev = next_event(session)
+    url = f"/api/events/{ev.id}/manual-odds"
+    for sel, o in (("home", "2.10"), ("draw", "3.40")):
+        client.post(url, json={"bookmaker": "Fuente Y", "market": "1x2", "selection": sel, "odds": o})
+    r = client.post(url, json={"bookmaker": "Fuente Y", "market": "1x2", "selection": "away", "odds": "18/5"})
+    d = r.json()
+    assert d["margin"]["available"] and d["margin"]["overround"] == pytest.approx(1 / 2.1 + 1 / 3.4 + 1 / 4.6 - 1)
+    assert d["evaluation"]["p_no_vig"] is not None
+    r = client.post(url, json={"bookmaker": "Fuente Y", "market": "corners_totals", "selection": "over",
+                               "line": 9.5, "odds": "1.90"})
+    ev_row = r.json()["evaluation"]
+    assert ev_row["ev"] is None and ev_row["category"] == "datos_insuficientes"
+    assert "córners" in ev_row["reasons"][0]

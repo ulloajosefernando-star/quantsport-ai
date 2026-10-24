@@ -31,7 +31,7 @@ Coste de The Odds API: cada consulta de cuotas cuesta mercados × regiones créd
 
 Nota sobre API-Football: la página de precios confirma 100 solicitudes/día gratis y "todas las competiciones y endpoints", pero no dice qué temporadas incluye. Dos reportes independientes de usuarios (oct-2026) indican que el plan gratuito rechaza la temporada actual con un error `errors.plan` y solo permite temporadas pasadas (2022–2024). El adaptador detecta ese error, lo explica y no lo reintenta. Por eso la ruta gratuita para Liga MX es: histórico de football-data.co.uk + calendario y cuotas de The Odds API.
 
-No se usa scraping ni se elude ningún control de acceso. Las casas sin API pública (p. ej. Playdoit) se cubren con captura manual de cuotas en el detalle del partido. Se descartaron ESPN, SofaScore, FBref, Understat, FotMob y Transfermarkt: son APIs no oficiales o requieren scraping.
+No se usa scraping ni se elude ningún control de acceso. No hay integración con ninguna casa de apuestas concreta: las cuotas de fuentes sin API se capturan a mano en el detalle del partido. Se descartaron ESPN, SofaScore, FBref, Understat, FotMob y Transfermarkt: son APIs no oficiales o requieren scraping.
 
 ## 3. Estimación de costes mensuales (MXN)
 
@@ -64,7 +64,8 @@ frontend/ (React + Vite + Tailwind, español)  ──/api──►  backend/ (Fa
                                                          ├─ providers/      adaptadores normalizados, caché, cuotas, registro de llamadas
                                                          ├─ ingestion/      deduplicación entre fuentes, cuotas inmutables, trabajos idempotentes
                                                          ├─ sports/football Dixon-Coles con decaimiento temporal e incertidumbre (Laplace)
-                                                         ├─ probability/    conversión de cuotas, márgenes (proporcional, potencia, Shin), EV, Monte Carlo
+                                                         ├─ probability/    formatos de cuota, márgenes (proporcional, potencia, Shin), EV, Monte Carlo
+                                                         ├─ markets/        registro de mercados, liquidación, cuotas normalizadas, evaluador
                                                          ├─ calibration/    Brier, log loss, ECE, fiabilidad, control de calidad por mercado
                                                          ├─ backtesting/    walk-forward sin fuga de información
                                                          ├─ value_engine/   categorías de valor y NO BET
@@ -84,7 +85,7 @@ Un modelo solo produce recomendaciones si supera el control de calidad del merca
 | 1 | Núcleo matemático, fútbol (Dixon-Coles), validación, motor de valor, ranking, dashboard, demo, CSV, The Odds API, football-data.org, envío a Telegram | Hecho |
 | 2 | Modelos NBA, NFL, MLB y tenis (Elo, regresión logística, Poisson por deporte) con sus fuentes gratuitas | Pendiente |
 | 3 | API-Football (Liga MX), calendario gratis vía The Odds API, validación con cuotas de cierre, revisión de equipos, CLI de validación | En curso: conectores hechos y primera validación real corrida (sin ventaja frente al cierre). Faltan cuotas pre-cierre acumuladas, alineaciones, lesiones y xG |
-| 4 | Mercados adicionales: córners, tarjetas, props | Pendiente |
+| 4 | Mercados adicionales: córners, tarjetas, props | Registrados en el módulo de mercados (se muestran implícita y margen); faltan datos y modelos |
 | 5 | Comparación de modelos y ensamblado, recalibración (isotónica / Platt) | Pendiente |
 | 6 | Bot de Telegram interactivo: /start /help /today /ranking /football /nba /nfl /mlb /tennis /event /performance /status /settings | Pendiente |
 | 7 | Programador de tareas (APScheduler): sincronización, snapshots y liquidación automáticos | Pendiente |
@@ -108,8 +109,9 @@ Completo y probado:
 - Resumen a Telegram (vista previa y envío) con lista blanca, deduplicación y límite diario.
 - Adaptador de API-Football (resultados, calendario, cuotas; detecta restricciones de plan), calendario gratuito desde The Odds API, revisión y fusión de equipos entre fuentes, línea de comandos (`python -m app.cli`).
 - Fuentes gratuitas adicionales: openfootball (resultados de 6 ligas europeas, dominio público) y ratings de Club Elo como referencia externa.
-- Captura manual de cuotas vistas en otra casa (p. ej. Playdoit) con evaluación inmediata; no entra en el consenso del mercado.
-- 139 pruebas automáticas, ninguna usa APIs reales.
+- Módulo universal de cuotas y mercados ([CUOTAS_Y_MERCADOS.md](CUOTAS_Y_MERCADOS.md)): cuatro formatos de cuota, 70 mercados en 5 deportes con reglas de liquidación, estructura normalizada con identificadores estables, margen con método configurable, EV por estados, pantalla "Cuotas y mercados" y calculadora. El modelo de fútbol cubre 10 mercados; NBA, NFL, MLB y tenis aún no tienen modelo.
+- Captura manual de cuotas de cualquier fuente, con evaluación inmediata; no entra en el consenso del mercado.
+- 211 pruebas automáticas, ninguna usa APIs reales.
 
 Pendiente o incompleto:
 - Fútbol queda como parcial. Primera validación real de Liga MX (23-oct-2026, ver sección 8): 1X2 bloqueado y Over/Under y ambos anotan experimentales. Hoy el modelo no encuentra ventaja y la plataforma recomienda NO BET.

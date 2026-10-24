@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import threading
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 
 import numpy as np
@@ -17,6 +17,9 @@ from app.core.config import ValueThresholds
 from app.core.logging import get_logger
 from app.db.models import BacktestRun, CalibrationReport, Competition, Event, ModelVersion
 from app.ingestion.store import as_utc
+from app.markets import registry
+from app.markets.models import FootballMatrixModel
+from app.markets.quotes import selection_label
 from app.probability.margin import compare_methods
 from app.probability.settlement import binary_distribution
 from app.providers import clubelo
@@ -71,6 +74,11 @@ class CompetitionState:
             return "sin_modelo"
         return self.gate.status if self.gate else quality_gate.EXPERIMENTAL
 
+    def sample_score(self, th: ValueThresholds) -> float:
+        """Tamaño de la muestra fuera de muestra respecto al mínimo exigido (1.0 = el doble del mínimo o más)."""
+        n = self.walkforward.get("n_eval") if isinstance(self.walkforward, dict) else None
+        return float(min(1.0, (n or 0) / max(2 * th.min_eval_sample, 1)))
+
     @property
     def calibration_score(self) -> float:
         try:
@@ -83,6 +91,7 @@ class CompetitionState:
 class FootballService:
     def __init__(self) -> None:
         self._states: dict[int, CompetitionState] = {}
+        self._event_models: dict[tuple, FootballMatrixModel] = {}
         self._lock = threading.Lock()
 
     # -------------------------------------------------------------- competition
@@ -108,6 +117,7 @@ class FootballService:
     def invalidate(self) -> None:
         with self._lock:
             self._states.clear()
+            self._event_models.clear()
 
     def _build_state(self, s: Session, comp: Competition, fp: tuple, th: ValueThresholds) -> CompetitionState:
         st = CompetitionState(comp.id, comp.key, comp.name, comp.is_synthetic, fp)
@@ -169,13 +179,8 @@ class FootballService:
         return mv.id
 
     # -------------------------------------------------------------- event
-    def analyze_event(self, s: Session, ev: Event, th: ValueThresholds, now: datetime | None = None,
-                      focus: dict | None = None) -> dict:
-        """Análisis completo del evento.
-
-        ``focus`` = {"market", "selection", "line", "bookmaker"} añade ``focus_assessment``: la misma
-        evaluación pero usando SOLO la cuota de ese operador (p. ej. una cuota capturada a mano).
-        """
+    def analyze_event(self, s: Session, ev: Event, th: ValueThresholds, now: datetime | None = None) -> dict:
+        """Análisis completo del evento."""
         now = now or datetime.now(UTC)
         comp = ev.competition
         st = self.state(s, comp, th)
@@ -190,25 +195,12 @@ class FootballService:
         }
         if out["is_synthetic"]:
             out["limitations"].insert(0, "DATOS SINTÉTICOS de demostración: no representan partidos ni cuotas reales.")
-        issues: list[str] = []
-        if st.model is None:
-            issues.append(st.error or "Modelo no disponible")
-        else:
-            m = st.model
-            out["model"] = m.metadata() | {
+        issues = _event_issues(st, home, away, kickoff, th)
+        if st.model is not None:
+            out["model"] = st.model.metadata() | {
                 "status": st.status, "gate": st.gate.checks if st.gate else [],
                 "market_status": {k: v["status"] for k, v in (st.gate.markets if st.gate else {}).items()},
             }
-            for t in (home, away):
-                if not m.has_team(t):
-                    issues.append(f"{t}: sin historial en esta competición (p. ej. ascendido o nombre no normalizado).")
-                elif not m.team_sample_ok(t):
-                    issues.append(f"{t}: solo {m.team_matches.get(t, 0)} partidos (mínimo {th.min_team_matches}).")
-            if st.last_result_at and (kickoff - st.last_result_at) > timedelta(days=th.max_data_age_days):
-                issues.append(
-                    f"Último resultado usado: {st.last_result_at.date()} (más de {th.max_data_age_days} días "
-                    "antes del partido). Posibles cambios de plantilla no reflejados."
-                )
         out["external_ratings"] = _external_ratings(s, ev, kickoff)
         out["data_quality"] = {
             "last_result_used": st.last_result_at.isoformat() if st.last_result_at else None,
@@ -221,7 +213,7 @@ class FootballService:
         out["odds_history"] = _odds_history(live)
         out["odds_table"] = _odds_table(live)
 
-        if st.model is None or any("sin historial" in i or "solo" in i for i in issues):
+        if st.model is None or _blocking(issues):
             out["assessments"] = []
             out["summary_category"] = "datos_insuficientes"
             return out
@@ -255,26 +247,16 @@ class FootballService:
             ext["discrepancy"] = abs(ext["gap"]) > ELO_DISCREPANCY
 
         selections = self._selections(sm, sampled, p_samples, live, kickoff)
+        selections += self._extra_selections(FootballMatrixModel(sm, sampled, st.gate), live, home, away)
         data_issues = [i for i in issues if "Último resultado" in i]
         assessments = []
         for sel, ps in selections:
             status = st.gate.market_status(sel.market, sel.line) if st.gate else "experimental"
-            a = assess(sel, th, status, data_issues, st.calibration_score, now=now, p_samples=ps)
+            a = assess(sel, th, status, data_issues, st.calibration_score, now=now, p_samples=ps,
+                       sample_score=st.sample_score(th))
             a.is_synthetic = a.is_synthetic or out["is_synthetic"]
             assessments.append(a.to_dict())
         out["assessments"] = assessments
-        if focus:
-            out["focus_assessment"] = None
-            for sel, ps in selections:
-                same_line = (sel.line is None and focus.get("line") is None) or (
-                    sel.line is not None and focus.get("line") is not None and abs(sel.line - focus["line"]) < 1e-9)
-                if sel.market == focus["market"] and sel.selection == focus["selection"] and same_line:
-                    only = replace(sel, offers=[o for o in sel.offers if o.bookmaker == focus["bookmaker"]])
-                    status = st.gate.market_status(sel.market, sel.line) if st.gate else "experimental"
-                    fa = assess(only, th, status, data_issues, st.calibration_score, now=now, p_samples=ps)
-                    fa.is_synthetic = fa.is_synthetic or out["is_synthetic"]
-                    out["focus_assessment"] = fa.to_dict()
-                    break
         out["margin_analysis"] = _margin_analysis(live)
         cats = [a["category"] for a in assessments if a["n_offers"]]
         out["summary_category"] = min(cats, key=CATEGORY_ORDER.index) if cats else "datos_insuficientes"
@@ -360,7 +342,99 @@ class FootballService:
         return out
 
 
+    # -------------------------------------------------------------- mercados universales
+    def market_model(self, s: Session, ev: Event, th: ValueThresholds) -> EventModel:
+        """Modelo del evento para el módulo de mercados, o el motivo por el que no hay."""
+        st = self.state(s, ev.competition, th)
+        home, away = ev.home_team.name, ev.away_team.name
+        issues = _event_issues(st, home, away, as_utc(ev.kickoff_utc), th)
+        em = EventModel(None, None, [i for i in issues if "Último resultado" in i], st.calibration_score,
+                        st.sample_score(th), st.status)
+        if st.model is None or _blocking(issues):
+            em.reason = "; ".join(issues) or "Modelo no disponible"
+            return em
+        key = (ev.id, st.data_fp)
+        with self._lock:
+            cached = self._event_models.get(key)
+        if cached is None:
+            m = st.model
+            cached = FootballMatrixModel(m.predict(home, away), list(m.sample_predictions(home, away, lambda x: x,
+                                                                                          n=N_SAMPLES)), st.gate)
+            with self._lock:
+                if len(self._event_models) > 500:
+                    self._event_models.clear()
+                self._event_models[key] = cached
+        em.model = cached
+        return em
+
+    @staticmethod
+    def _extra_selections(fm: FootballMatrixModel, live: pd.DataFrame, home: str,
+                          away: str) -> list[tuple[SelectionInput, np.ndarray | None]]:
+        """Mercados del registro que no cubre ``_selections`` (doble oportunidad, DNB, hándicap europeo,
+        goles por equipo, resultado exacto, primer equipo en marcar), solo si hay cuotas para ellos."""
+        if live.empty:
+            return []
+        latest = live.sort_values("captured_at").groupby(["bookmaker", "market", "line", "selection"],
+                                                         dropna=False).tail(1)
+        latest = latest[(latest["market"].isin(EXTRA_MARKETS)) & (latest["bookmaker"] != "Máximo mercado")]
+        out: list[tuple[SelectionInput, np.ndarray | None]] = []
+        for (market, line, sel), g in latest.groupby(["market", "line", "selection"], dropna=False):
+            ln = None if pd.isna(line) else float(line)
+            mdef = registry.get("football", market)
+            if fm.support(mdef, "ft", False):
+                continue
+            try:
+                registry.validate("football", market, sel, ln)
+            except registry.MarketValidationError:
+                continue
+            smod = fm.selection_model(mdef, sel, ln)
+            offers = [Offer(r.bookmaker, float(r.odds), r.captured_at.to_pydatetime(), r.source, bool(r.is_synthetic))
+                      for r in g.itertuples()]
+            label = f"{mdef.label}: {selection_label(mdef, sel, ln, home, away)}"
+            out.append((SelectionInput(market=market, selection=sel, line=ln, label=label, offers=offers,
+                                       p_market_fair=None, dist_fn=smod.dist_fn, ev_samples_fn=smod.ev_samples_fn,
+                                       binary=smod.binary), smod.p_samples))
+        return out
+
+
+@dataclass
+class EventModel:
+    model: FootballMatrixModel | None
+    reason: str | None
+    data_issues: list[str]
+    calibration_score: float
+    sample_score: float
+    status: str
+
+
+# Mercados del registro evaluados además de 1X2, totales, ambos anotan y hándicap asiático
+EXTRA_MARKETS = {"double_chance", "dnb", "european_handicap", "team_totals", "correct_score", "first_team_to_score"}
+
+
 # ------------------------------------------------------------------ helpers
+def _event_issues(st: CompetitionState, home: str, away: str, kickoff: datetime, th: ValueThresholds) -> list[str]:
+    issues: list[str] = []
+    if st.model is None:
+        return [st.error or "Modelo no disponible"]
+    m = st.model
+    for t in (home, away):
+        if not m.has_team(t):
+            issues.append(f"{t}: sin historial en esta competición (p. ej. ascendido o nombre no normalizado).")
+        elif not m.team_sample_ok(t):
+            issues.append(f"{t}: solo {m.team_matches.get(t, 0)} partidos (mínimo {th.min_team_matches}).")
+    if st.last_result_at and (kickoff - st.last_result_at) > timedelta(days=th.max_data_age_days):
+        issues.append(
+            f"Último resultado usado: {st.last_result_at.date()} (más de {th.max_data_age_days} días "
+            "antes del partido). Posibles cambios de plantilla no reflejados."
+        )
+    return issues
+
+
+def _blocking(issues: list[str]) -> bool:
+    return any("sin historial" in i or "solo" in i or "Modelo no disponible" in i or "Sin partidos" in i
+               for i in issues)
+
+
 ELO_DISCREPANCY = 0.20  # el modelo incluye localía y Elo neutral no: ~0.05-0.10 de diferencia es normal
 
 

@@ -212,10 +212,12 @@ class Ingestor:
                 continue
             if ev.id not in existing:
                 existing[ev.id] = {
-                    (r.bookmaker, r.market, r.line, r.selection, as_utc(r.captured_at), r.source)
+                    (r.bookmaker, r.market, r.period, r.participant, r.line, r.selection, as_utc(r.captured_at),
+                     r.source)
                     for r in self.s.scalars(select(OddsSnapshot).where(OddsSnapshot.event_id == ev.id))
                 }
-            key = (o.bookmaker, o.market, o.line, o.selection, o.captured_at.astimezone(UTC), o.source)
+            key = (o.bookmaker, o.market, o.period, o.participant, o.line, o.selection,
+                   o.captured_at.astimezone(UTC), o.source)
             if key in existing[ev.id]:
                 rep.odds_duplicates += 1
                 continue
@@ -223,7 +225,8 @@ class Ingestor:
             self.s.add(OddsSnapshot(
                 event_id=ev.id, bookmaker=o.bookmaker, market=o.market, line=o.line, selection=o.selection,
                 odds_decimal=o.odds_decimal, captured_at=o.captured_at, is_closing=o.is_closing, source=o.source,
-                is_synthetic=o.is_synthetic,
+                is_synthetic=o.is_synthetic, period=o.period, participant=o.participant, is_live=o.is_live,
+                original_format=o.original_format, original_value=o.original_value,
             ))
             rep.odds_inserted += 1
         if invalid:

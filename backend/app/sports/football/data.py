@@ -44,7 +44,9 @@ def odds_frame(s: Session, event_ids: list[int]) -> pd.DataFrame:
             select(OddsSnapshot.event_id, OddsSnapshot.bookmaker, OddsSnapshot.market, OddsSnapshot.line,
                    OddsSnapshot.selection, OddsSnapshot.odds_decimal, OddsSnapshot.captured_at,
                    OddsSnapshot.is_closing, OddsSnapshot.source, OddsSnapshot.is_synthetic)
-            .where(OddsSnapshot.event_id.in_([int(x) for x in chunk]))
+            .where(OddsSnapshot.event_id.in_([int(x) for x in chunk]),
+                   # el modelo de fútbol trabaja con mercados prepartido del partido completo
+                   OddsSnapshot.period == "ft", OddsSnapshot.participant.is_(None), OddsSnapshot.is_live.is_(False))
         ).all())
     df = pd.DataFrame(rows, columns=["event_id", "bookmaker", "market", "line", "selection", "odds",
                                      "captured_at", "is_closing", "source", "is_synthetic"])
