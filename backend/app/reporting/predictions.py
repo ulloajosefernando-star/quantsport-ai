@@ -15,8 +15,10 @@ from sqlalchemy.orm import Session
 
 from app.backtesting.football_walkforward import betting_summary
 from app.calibration.metrics import brier_score, log_loss
-from app.db.models import Event, Prediction, Settlement
-from app.probability.settlement import handicap_return, total_return
+from app.db.models import Event, OddsSnapshot, Prediction, Settlement
+from app.ingestion.store import as_utc
+from app.markets import registry
+from app.markets.settlement import Outcome, UnsupportedSettlementError, settle
 
 ACTIONABLE = {"candidato_valor", "en_observacion"}
 
@@ -68,43 +70,87 @@ def snapshot(s: Session, rows: list[dict], model_version_ids: dict[str, int]) ->
     return {"inserted": inserted, "duplicates": dup, "skipped": skipped}
 
 
+def snapshot_ranking(s: Session, timezone: str) -> dict:
+    """Registra como pronósticos todo el ranking actual (incluye 'sin valor', para medir calibración)."""
+    from app.core.runtime_settings import get_thresholds
+    from app.db.models import Competition
+    from app.ranking.ranker import RankingFilters, build_ranking
+    from app.sports.football.service import football_service
+
+    th = get_thresholds(s)
+    rows = build_ranking(s, th, RankingFilters(include_no_value=True), timezone)
+    mv = {}
+    for comp in s.scalars(select(Competition)):
+        st = football_service.state(s, comp, th)
+        if st.model_version_id:
+            mv[comp.key] = st.model_version_id
+    return snapshot(s, rows, mv)
+
+
 def settle_one(p: Prediction, ev: Event) -> tuple[str, float, float | None]:
-    """Devuelve (estado, retorno_neto, resultado binario para métricas o None)."""
-    hg, ag = ev.home_score, ev.away_score
-    d = p.odds or 2.0
-    if p.market == "1x2":
-        won = (p.selection == "home" and hg > ag) or (p.selection == "draw" and hg == ag) or \
-              (p.selection == "away" and hg < ag)
-        return ("gana", d - 1, 1.0) if won else ("pierde", -1.0, 0.0)
-    if p.market == "btts":
-        yes = hg > 0 and ag > 0
-        won = yes if p.selection == "yes" else not yes
-        return ("gana", d - 1, 1.0) if won else ("pierde", -1.0, 0.0)
-    if p.market == "totals":
-        name, ret = total_return(hg + ag, float(p.line), d, p.selection)
-        binary = None if name not in ("gana", "pierde") else float(name == "gana")
-        return name, ret, binary
-    if p.market == "ah":
-        diff = hg - ag if p.selection == "home" else ag - hg
-        name, ret = handicap_return(diff, float(p.line), d)
-        return name, ret, None
-    raise ValueError(f"Mercado sin regla de liquidación: {p.market}")
+    """Devuelve (estado, retorno_neto, resultado binario para métricas o None).
+
+    Usa las reglas del registro de mercados, así que cualquier mercado de fútbol que el ranking pueda
+    emitir (1X2, totales, hándicaps, doble oportunidad, goles por equipo...) se liquida igual.
+    """
+    sport = ev.competition.sport.key if ev.competition and ev.competition.sport else "football"
+    mdef = registry.get(sport, p.market)
+    outcome = Outcome(ev.home_score, ev.away_score,
+                      extra={"ht_home": ev.home_score_ht, "ht_away": ev.away_score_ht}
+                      if ev.home_score_ht is not None else {})
+    name, ret = settle(mdef.settlement, p.selection, p.line, p.odds or 2.0, outcome)
+    binary = float(name == "gana") if name in ("gana", "pierde") else None
+    return name, ret, binary
+
+
+def closing_odds_for(s: Session, p: Prediction, ev: Event) -> float | None:
+    """Cuota de referencia al cierre para el CLV.
+
+    1) La última cuota del MISMO operador capturada después del pronóstico y antes del inicio.
+    2) Si no hay, la cuota de cierre del CSV (``is_closing``) del mismo mercado y selección, media entre operadores.
+    Sin ninguna de las dos no se calcula CLV (no se usa la propia cuota del pronóstico).
+    """
+    kickoff = as_utc(ev.kickoff_utc)
+    base = select(OddsSnapshot.odds_decimal).where(
+        OddsSnapshot.event_id == ev.id, OddsSnapshot.market == p.market, OddsSnapshot.selection == p.selection,
+        OddsSnapshot.period == "ft", OddsSnapshot.participant.is_(None), OddsSnapshot.is_live.is_(False),
+        OddsSnapshot.line.is_(None) if p.line is None else OddsSnapshot.line == p.line)
+    if p.bookmaker and p.odds_captured_at is not None:
+        last = s.scalar(base.where(OddsSnapshot.bookmaker == p.bookmaker, OddsSnapshot.is_closing.is_(False),
+                                   OddsSnapshot.captured_at > as_utc(p.odds_captured_at),
+                                   OddsSnapshot.captured_at <= kickoff)
+                        .order_by(OddsSnapshot.captured_at.desc()).limit(1))
+        if last:
+            return float(last)
+    closing = list(s.scalars(base.where(OddsSnapshot.is_closing.is_(True),
+                                        OddsSnapshot.bookmaker != "Máximo mercado")))
+    return float(np.mean(closing)) if closing else None
 
 
 def settle_pending(s: Session) -> dict:
     q = (select(Prediction, Event).join(Event, Prediction.event_id == Event.id)
          .outerjoin(Settlement, Settlement.prediction_id == Prediction.id)
          .where(Settlement.id.is_(None), Event.status.in_(["finished", "cancelled"])))
-    n = 0
+    n = with_clv = 0
+    errors: list[str] = []
     for p, ev in s.execute(q).all():
         if ev.status == "cancelled":
             s.add(Settlement(prediction_id=p.id, state="anulada", net_return=0.0))
         else:
-            state, ret, _ = settle_one(p, ev)
+            if ev.home_score is None or ev.away_score is None:
+                continue  # finalizado sin marcador todavía
+            try:
+                state, ret, _ = settle_one(p, ev)
+            except (registry.MarketValidationError, UnsupportedSettlementError) as exc:
+                errors.append(f"Pronóstico {p.id} ({p.market}): {exc}")
+                continue
+            if p.closing_odds is None:
+                p.closing_odds = closing_odds_for(s, p, ev)
+                with_clv += p.closing_odds is not None
             s.add(Settlement(prediction_id=p.id, state=state, net_return=ret))
         n += 1
     s.commit()
-    return {"settled": n}
+    return {"settled": n, "with_clv": with_clv, "errors": errors[:20]}
 
 
 def performance(s: Session) -> dict:

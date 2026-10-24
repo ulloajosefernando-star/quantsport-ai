@@ -10,12 +10,14 @@ from fastapi.responses import JSONResponse
 
 from app.api.markets import router as markets_router
 from app.api.routes import router
+from app.api.scheduler import router as scheduler_router
 from app.core.config import get_settings
 from app.core.logging import configure_logging, get_logger
 from app.db.migrate import upgrade_head
 from app.db.session import session_scope
 from app.ingestion import jobs
 from app.ingestion.store import seed_sports
+from app.scheduler import runner as scheduler
 
 log = get_logger("quantsport")
 
@@ -38,7 +40,9 @@ async def lifespan(_: FastAPI):
         with session_scope() as s:
             jobs.wipe_synthetic(s)
     log.info("QuantSport AI iniciado (modo=%s, entorno=%s)", settings.data_mode, settings.app_env)
+    scheduler.start(settings)
     yield
+    scheduler.stop()
 
 
 def create_app() -> FastAPI:
@@ -61,6 +65,7 @@ def create_app() -> FastAPI:
 
     app.include_router(router)
     app.include_router(markets_router)
+    app.include_router(scheduler_router)
     return app
 
 
