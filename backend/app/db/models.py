@@ -23,6 +23,9 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
 )
+from sqlalchemy import (
+    false as sa_false,
+)
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -145,12 +148,17 @@ class Market(Base):
 
 
 class OddsSnapshot(Base):
-    """Inmutable. Una fila por (evento, operador, mercado, línea, selección, momento de captura)."""
+    """Inmutable. Una fila por (evento, operador, mercado, periodo, jugador, línea, selección, captura).
+
+    ``odds_decimal`` es la cuota normalizada; ``original_format``/``original_value`` guardan cómo llegó.
+    La vista normalizada evento → mercado → selección → cuota está en ``app.markets.quotes``.
+    """
 
     __tablename__ = "odds_snapshots"
     __table_args__ = (
         UniqueConstraint(
-            "event_id", "bookmaker", "market", "line", "selection", "captured_at", "source", name="uq_odds_snapshot"
+            "event_id", "bookmaker", "market", "period", "participant", "line", "selection", "captured_at", "source",
+            name="uq_odds_snapshot",
         ),
         Index("ix_odds_event_market", "event_id", "market"),
     )
@@ -165,6 +173,12 @@ class OddsSnapshot(Base):
     is_closing: Mapped[bool] = mapped_column(Boolean, default=False)
     source: Mapped[str] = mapped_column(String(64))
     is_synthetic: Mapped[bool] = mapped_column(Boolean, default=False)
+    period: Mapped[str] = mapped_column(String(16), default="ft", server_default="ft")
+    participant: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    is_live: Mapped[bool] = mapped_column(Boolean, default=False, server_default=sa_false())
+    market_status: Mapped[str] = mapped_column(String(16), default="open", server_default="open")  # open|suspended|closed
+    original_format: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    original_value: Mapped[str | None] = mapped_column(String(24), nullable=True)
 
 
 class ModelVersion(Base):
@@ -330,3 +344,17 @@ class AppSetting(Base):
     key: Mapped[str] = mapped_column(String(64), primary_key=True)
     value: Mapped[dict] = mapped_column(JSON)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+
+class TeamRating(Base):
+    """Rating externo de un equipo (p. ej. Club Elo) vigente en un rango de fechas. Solo referencia."""
+
+    __tablename__ = "team_ratings"
+    __table_args__ = (UniqueConstraint("team_id", "source", "valid_from"),)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    team_id: Mapped[int] = mapped_column(ForeignKey("teams.id"), index=True)
+    source: Mapped[str] = mapped_column(String(64))
+    rating: Mapped[float] = mapped_column(Float)
+    valid_from: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    valid_to: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    imported_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

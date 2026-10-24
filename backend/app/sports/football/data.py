@@ -44,7 +44,9 @@ def odds_frame(s: Session, event_ids: list[int]) -> pd.DataFrame:
             select(OddsSnapshot.event_id, OddsSnapshot.bookmaker, OddsSnapshot.market, OddsSnapshot.line,
                    OddsSnapshot.selection, OddsSnapshot.odds_decimal, OddsSnapshot.captured_at,
                    OddsSnapshot.is_closing, OddsSnapshot.source, OddsSnapshot.is_synthetic)
-            .where(OddsSnapshot.event_id.in_([int(x) for x in chunk]))
+            .where(OddsSnapshot.event_id.in_([int(x) for x in chunk]),
+                   # el modelo de fútbol trabaja con mercados prepartido del partido completo
+                   OddsSnapshot.period == "ft", OddsSnapshot.participant.is_(None), OddsSnapshot.is_live.is_(False))
         ).all())
     df = pd.DataFrame(rows, columns=["event_id", "bookmaker", "market", "line", "selection", "odds",
                                      "captured_at", "is_closing", "source", "is_synthetic"])
@@ -55,6 +57,8 @@ def odds_frame(s: Session, event_ids: list[int]) -> pd.DataFrame:
 
 # Pseudo-operador agregado del CSV: mezcla operadores distintos, no se usa para consenso.
 EXCLUDED_FROM_CONSENSUS = {"Máximo mercado"}
+# Cuotas capturadas a mano: se evalúan como oferta, pero no forman la referencia de mercado
+MANUAL_SOURCE = "manual"
 
 MARKET_SELECTIONS = {"1x2": ("home", "draw", "away"), "totals": ("over", "under"), "btts": ("yes", "no")}
 
@@ -67,7 +71,7 @@ def consensus_fair(odds: pd.DataFrame, market: str, line: float | None, closing:
     """
     sels = MARKET_SELECTIONS[market]
     sub = odds[(odds["market"] == market) & (odds["is_closing"] == closing)
-               & ~odds["bookmaker"].isin(EXCLUDED_FROM_CONSENSUS)]
+               & ~odds["bookmaker"].isin(EXCLUDED_FROM_CONSENSUS) & (odds["source"] != MANUAL_SOURCE)]
     if line is not None:
         sub = sub[np.isclose(sub["line"].astype(float), line)]
     out: dict[int, dict[str, float]] = {}
@@ -89,7 +93,7 @@ def consensus_fair(odds: pd.DataFrame, market: str, line: float | None, closing:
 def average_odds(odds: pd.DataFrame, market: str, line: float | None, closing: bool) -> dict[int, dict[str, float]]:
     """Cuota media entre operadores (más conservadora que la mejor cuota)."""
     sub = odds[(odds["market"] == market) & (odds["is_closing"] == closing)
-               & ~odds["bookmaker"].isin(EXCLUDED_FROM_CONSENSUS)]
+               & ~odds["bookmaker"].isin(EXCLUDED_FROM_CONSENSUS) & (odds["source"] != MANUAL_SOURCE)]
     if line is not None:
         sub = sub[np.isclose(sub["line"].astype(float), line)]
     if sub.empty:

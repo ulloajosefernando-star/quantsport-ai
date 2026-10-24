@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session
 
 from app.db.models import Competition, Event, EventStatistic, OddsSnapshot, Sport, Team, TeamAlias
 from app.providers.base import NormalizedEvent, NormalizedOdds, ProviderBatch
-from app.providers.normalize import team_key
+from app.providers.normalize import slug, team_key
 
 MATCH_WINDOW = timedelta(hours=36)
 
@@ -64,6 +64,7 @@ class Ingestor:
         self._comps: dict[str, Competition] = {}
         self._teams: dict[tuple[int, str], Team] = {}
         self._events: dict[tuple[int, int, int], list[Event]] = {}
+        self._aliases: dict[int, dict[str, int]] = {}
 
     # ------------------------------------------------------------ lookups
     def competition(self, sport: str, key: str, name: str, country: str, synthetic: bool) -> Competition:
@@ -86,6 +87,11 @@ class Ingestor:
         if team is None:
             team = self.s.scalar(select(Team).where(Team.sport_id == sp.id, Team.canonical_key == ck))
             if team is None:
+                # alias guardados (p. ej. tras fusionar equipos desde el dashboard)
+                idx = self._alias_index(sp.id)
+                alias_team = idx.get(slug(name)) or idx.get(ck)
+                team = self.s.get(Team, alias_team) if alias_team else None
+            if team is None:
                 team = Team(sport_id=sp.id, canonical_key=ck, name=name, is_synthetic=synthetic)
                 self.s.add(team)
                 self.s.flush()
@@ -97,6 +103,13 @@ class Ingestor:
             if not alias_exists:
                 self.s.add(TeamAlias(team_id=team.id, source=source, alias=name))
         return team
+
+    def _alias_index(self, sport_id: int) -> dict[str, int]:
+        if sport_id not in self._aliases:
+            rows = self.s.execute(select(TeamAlias.alias, TeamAlias.team_id).join(Team, Team.id == TeamAlias.team_id)
+                                  .where(Team.sport_id == sport_id)).all()
+            self._aliases[sport_id] = {slug(a): tid for a, tid in rows}
+        return self._aliases[sport_id]
 
     def _candidates(self, comp_id: int, home_id: int, away_id: int) -> list[Event]:
         key = (comp_id, home_id, away_id)
@@ -199,10 +212,12 @@ class Ingestor:
                 continue
             if ev.id not in existing:
                 existing[ev.id] = {
-                    (r.bookmaker, r.market, r.line, r.selection, as_utc(r.captured_at), r.source)
+                    (r.bookmaker, r.market, r.period, r.participant, r.line, r.selection, as_utc(r.captured_at),
+                     r.source)
                     for r in self.s.scalars(select(OddsSnapshot).where(OddsSnapshot.event_id == ev.id))
                 }
-            key = (o.bookmaker, o.market, o.line, o.selection, o.captured_at.astimezone(UTC), o.source)
+            key = (o.bookmaker, o.market, o.period, o.participant, o.line, o.selection,
+                   o.captured_at.astimezone(UTC), o.source)
             if key in existing[ev.id]:
                 rep.odds_duplicates += 1
                 continue
@@ -210,7 +225,8 @@ class Ingestor:
             self.s.add(OddsSnapshot(
                 event_id=ev.id, bookmaker=o.bookmaker, market=o.market, line=o.line, selection=o.selection,
                 odds_decimal=o.odds_decimal, captured_at=o.captured_at, is_closing=o.is_closing, source=o.source,
-                is_synthetic=o.is_synthetic,
+                is_synthetic=o.is_synthetic, period=o.period, participant=o.participant, is_live=o.is_live,
+                original_format=o.original_format, original_value=o.original_value,
             ))
             rep.odds_inserted += 1
         if invalid:

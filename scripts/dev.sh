@@ -5,10 +5,8 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 [ -f "$ROOT/.env" ] || cp "$ROOT/.env.example" "$ROOT/.env"
 
 cd "$ROOT/backend"
-if [ ! -d .venv ]; then
-  python3 -m venv .venv
-  .venv/bin/pip install -q -r requirements-dev.txt
-fi
+source "$ROOT/scripts/_venv.sh"
+ensure_venv requirements-dev.txt
 .venv/bin/uvicorn app.main:app --port 8000 &
 BACK=$!
 trap 'kill $BACK 2>/dev/null' EXIT

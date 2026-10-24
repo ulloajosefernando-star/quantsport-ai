@@ -1,30 +1,169 @@
 {
   "_comment": "Nombre canónico -> alias usados por distintas fuentes. Añade aquí las discrepancias detectadas.",
-  "Manchester United": ["Man United", "Manchester United FC", "Man Utd"],
-  "Manchester City": ["Man City", "Manchester City FC"],
-  "Tottenham": ["Tottenham Hotspur", "Tottenham Hotspur FC", "Spurs"],
-  "Newcastle": ["Newcastle United", "Newcastle United FC"],
-  "Wolves": ["Wolverhampton Wanderers", "Wolverhampton Wanderers FC", "Wolverhampton"],
-  "Nott'm Forest": ["Nottingham Forest", "Nottingham Forest FC"],
-  "Brighton": ["Brighton and Hove Albion", "Brighton & Hove Albion FC", "Brighton & Hove Albion"],
-  "West Ham": ["West Ham United", "West Ham United FC"],
-  "Ath Madrid": ["Atletico Madrid", "Atlético Madrid", "Club Atlético de Madrid"],
-  "Ath Bilbao": ["Athletic Bilbao", "Athletic Club"],
-  "Betis": ["Real Betis", "Real Betis Balompié"],
-  "Sociedad": ["Real Sociedad", "Real Sociedad de Fútbol"],
-  "Inter": ["Inter Milan", "FC Internazionale Milano", "Internazionale"],
-  "Milan": ["AC Milan"],
-  "Bayern Munich": ["Bayern München", "FC Bayern München", "Bayern"],
-  "Dortmund": ["Borussia Dortmund"],
-  "Leverkusen": ["Bayer Leverkusen", "Bayer 04 Leverkusen"],
-  "Paris SG": ["Paris Saint-Germain", "Paris Saint Germain", "PSG"],
-  "Club America": ["América", "Club América", "CF America"],
-  "Guadalajara": ["Chivas", "CD Guadalajara", "Chivas Guadalajara"],
-  "UNAM": ["Pumas UNAM", "Pumas"],
-  "Tigres": ["Tigres UANL", "UANL"],
-  "Monterrey": ["CF Monterrey", "Rayados"],
-  "Cruz Azul": ["CD Cruz Azul"],
-  "Toluca": ["Deportivo Toluca"],
-  "Santos Laguna": ["Club Santos Laguna"],
-  "Atl. San Luis": ["Atletico San Luis", "Atlético San Luis", "San Luis"]
+  "Manchester United": [
+    "Man United",
+    "Manchester United FC",
+    "Man Utd"
+  ],
+  "Manchester City": [
+    "Man City",
+    "Manchester City FC"
+  ],
+  "Tottenham": [
+    "Tottenham Hotspur",
+    "Tottenham Hotspur FC",
+    "Spurs"
+  ],
+  "Newcastle": [
+    "Newcastle United",
+    "Newcastle United FC"
+  ],
+  "Wolves": [
+    "Wolverhampton Wanderers",
+    "Wolverhampton Wanderers FC",
+    "Wolverhampton"
+  ],
+  "Nott'm Forest": [
+    "Nottingham Forest",
+    "Nottingham Forest FC"
+  ],
+  "Brighton": [
+    "Brighton and Hove Albion",
+    "Brighton & Hove Albion FC",
+    "Brighton & Hove Albion"
+  ],
+  "West Ham": [
+    "West Ham United",
+    "West Ham United FC"
+  ],
+  "Ath Madrid": [
+    "Atletico Madrid",
+    "Atlético Madrid",
+    "Club Atlético de Madrid"
+  ],
+  "Ath Bilbao": [
+    "Athletic Bilbao",
+    "Athletic Club"
+  ],
+  "Betis": [
+    "Real Betis",
+    "Real Betis Balompié"
+  ],
+  "Sociedad": [
+    "Real Sociedad",
+    "Real Sociedad de Fútbol"
+  ],
+  "Inter": [
+    "Inter Milan",
+    "FC Internazionale Milano",
+    "Internazionale"
+  ],
+  "Milan": [
+    "AC Milan"
+  ],
+  "Bayern Munich": [
+    "Bayern München",
+    "FC Bayern München",
+    "Bayern"
+  ],
+  "Dortmund": [
+    "Borussia Dortmund"
+  ],
+  "Leverkusen": [
+    "Bayer Leverkusen",
+    "Bayer 04 Leverkusen"
+  ],
+  "Paris SG": [
+    "Paris Saint-Germain",
+    "Paris Saint Germain",
+    "PSG"
+  ],
+  "Club America": [
+    "América",
+    "Club América",
+    "CF America"
+  ],
+  "Guadalajara": [
+    "CD Guadalajara",
+    "CD Guadalajara Chivas",
+    "Chivas",
+    "Chivas Guadalajara",
+    "Guadalajara Chivas"
+  ],
+  "UNAM": [
+    "Club Universidad Nacional",
+    "Pumas",
+    "Pumas U.N.A.M.",
+    "Pumas UNAM",
+    "U.N.A.M. - Pumas",
+    "U.N.A.M.- Pumas",
+    "UNAM Pumas"
+  ],
+  "Tigres": [
+    "Tigres U.A.N.L.",
+    "Tigres UANL",
+    "Tigres de la UANL",
+    "UANL"
+  ],
+  "Monterrey": [
+    "CF Monterrey",
+    "Rayados"
+  ],
+  "Cruz Azul": [
+    "CD Cruz Azul"
+  ],
+  "Toluca": [
+    "Deportivo Toluca"
+  ],
+  "Santos Laguna": [
+    "Club Santos Laguna"
+  ],
+  "Atl. San Luis": [
+    "Atletico San Luis",
+    "Atletico de San Luis",
+    "Atlético San Luis",
+    "Atlético de San Luis",
+    "San Luis"
+  ],
+  "_comment_liga_mx": "Alias de Liga MX recopilados de las fuentes conocidas; verifícalos con 'python -m app.cli equipos --competicion mex_liga_mx' y fusiona lo que falte.",
+  "Juarez": [
+    "FC Juarez",
+    "FC Juárez",
+    "Juárez",
+    "Bravos de Juarez"
+  ],
+  "Leon": [
+    "Club Leon",
+    "Club León",
+    "León"
+  ],
+  "Mazatlan": [
+    "Mazatlan FC",
+    "Mazatlán FC",
+    "Mazatlán"
+  ],
+  "Queretaro": [
+    "Club Queretaro",
+    "Querétaro",
+    "Querétaro FC",
+    "Queretaro FC"
+  ],
+  "Tijuana": [
+    "Club Tijuana",
+    "Club Tijuana Xoloitzcuintles de Caliente",
+    "Xolos"
+  ],
+  "Necaxa": [
+    "Club Necaxa"
+  ],
+  "Pachuca": [
+    "CF Pachuca",
+    "Club Pachuca"
+  ],
+  "Puebla": [
+    "Club Puebla"
+  ],
+  "Atlas": [
+    "Atlas FC"
+  ]
 }

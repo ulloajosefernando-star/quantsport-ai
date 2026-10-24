@@ -19,22 +19,27 @@ Fecha de verificación: 23-oct-2026. Los precios se consultaron en las páginas 
 |---|---|---|---|---|---|
 | Demo sintético interno | Liga ficticia de 16 equipos, 3 temporadas | Resultados y cuotas SINTÉTICOS, etiquetados en toda la interfaz | Sí | — | Completo |
 | football-data.co.uk (CSV) | Ligas europeas, Liga MX (`new/MEX.csv`), MLS | Resultados históricos, cuotas pre-cierre y de cierre | Sí | — | Importador completo (subida desde la web o API) |
-| The Odds API | Fútbol (Liga MX por verificar en `/v4/sports`), NBA, NFL, MLB, tenis | Cuotas actuales de varias casas | Starter: 500 créditos/mes, sin históricos | 20K créditos 30 USD; 100K 59 USD | Adaptador completo, con control de cuota y caché |
+| The Odds API | Fútbol (Liga MX por verificar en `/v4/sports`), NBA, NFL, MLB, tenis | Cuotas actuales y calendario (`/events`, sin coste) | Starter: 500 créditos/mes, sin históricos | 20K créditos 30 USD; 100K 59 USD | Adaptador completo, con control de cuota y caché |
 | football-data.org | 12 competiciones (sin Liga MX) | Calendario y resultados | Free: 10 llamadas/min | Standard 49 EUR; cuotas y estadísticas son extras de 15 EUR | Adaptador completo |
-| API-Football | Liga MX y 1,000+ ligas, alineaciones, lesiones | Calendario, resultados, estadísticas | Free: 100 solicitudes/día | Pro 19 USD, Ultra 29 USD, Mega 39 USD | Pendiente (Fase 3) |
+| API-Football | Liga MX (id 262) y 1,000+ ligas | Calendario, resultados, cuotas | Free: 100 solicitudes/día, **solo temporadas pasadas** (ver nota) | Pro 19 USD, Ultra 29 USD, Mega 39 USD | Adaptador completo (Fase 3) |
+| openfootball (football.json) | Inglaterra 1.ª/2.ª, España, Alemania, Italia, Francia (sin Liga MX) | Resultados y calendario; se usa para cruzar resultados con otras fuentes | Sí, dominio público | — | Adaptador completo |
+| Club Elo | Clubes europeos (sin Liga MX) | Ratings Elo diarios; referencia externa en el detalle de cada partido, no entra en el modelo | Sí | — | Importación manual de CSV (su robots.txt no permite descargas automáticas) |
+| TheSportsDB | Incluye Liga MX | Calendario y resultados, sin cuotas | Clave de prueba con límites muy bajos (15 partidos por consulta de temporada) | 9 USD/mes (≈ 166 MXN) | No integrado; opcional si se decide pagar |
 | nflverse, MLB Stats API, NBA, tenis | NFL, MLB, NBA, tenis | Datos de cada deporte | Sí, en general | — | Registrados como pendientes (Fase 2) |
 
 Coste de The Odds API: cada consulta de cuotas cuesta mercados × regiones créditos. Consultar 1X2 y totales en una región cuesta 2 créditos por liga. Con 2 ligas y 2 consultas al día son unos 240 créditos al mes, dentro del plan gratis. Los endpoints `/sports` y `/events` no consumen créditos. La plataforma lee las cabeceras `x-requests-remaining/used/last` y se detiene antes de agotar la cuota.
 
-No se usa scraping ni se elude ningún control de acceso.
+Nota sobre API-Football: la página de precios confirma 100 solicitudes/día gratis y "todas las competiciones y endpoints", pero no dice qué temporadas incluye. Dos reportes independientes de usuarios (oct-2026) indican que el plan gratuito rechaza la temporada actual con un error `errors.plan` y solo permite temporadas pasadas (2022–2024). El adaptador detecta ese error, lo explica y no lo reintenta. Por eso la ruta gratuita para Liga MX es: histórico de football-data.co.uk + calendario y cuotas de The Odds API.
+
+No se usa scraping ni se elude ningún control de acceso. No hay integración con ninguna casa de apuestas concreta: las cuotas de fuentes sin API se capturan a mano en el detalle del partido. Se descartaron ESPN, SofaScore, FBref, Understat, FotMob y Transfermarkt: son APIs no oficiales o requieren scraping.
 
 ## 3. Estimación de costes mensuales (MXN)
 
 | Categoría | Opción | MXN/mes | Recomendación |
 |---|---|---|---|
 | Datos deportivos | football-data.org Free + CSV football-data.co.uk | 0 | Recomendado |
-| Datos deportivos | API-Football Free | 0 | Recomendado en Fase 3 |
-| Datos deportivos | API-Football Pro (19 USD) | ≈ 350 | Solo si el plan gratis no alcanza |
+| Datos deportivos | API-Football Free | 0 | Útil solo para históricos (temporadas pasadas) |
+| Datos deportivos | API-Football Pro (19 USD) | ≈ 350 | Solo si necesitas la temporada actual desde API-Football |
 | Cuotas | The Odds API Starter | 0 | Recomendado |
 | Cuotas | The Odds API 20K (30 USD) | ≈ 553 | Excede el presupuesto |
 | Alojamiento | Tu computadora (modo local) | 0 | Recomendado para empezar |
@@ -59,7 +64,8 @@ frontend/ (React + Vite + Tailwind, español)  ──/api──►  backend/ (Fa
                                                          ├─ providers/      adaptadores normalizados, caché, cuotas, registro de llamadas
                                                          ├─ ingestion/      deduplicación entre fuentes, cuotas inmutables, trabajos idempotentes
                                                          ├─ sports/football Dixon-Coles con decaimiento temporal e incertidumbre (Laplace)
-                                                         ├─ probability/    conversión de cuotas, márgenes (proporcional, potencia, Shin), EV, Monte Carlo
+                                                         ├─ probability/    formatos de cuota, márgenes (proporcional, potencia, Shin), EV, Monte Carlo
+                                                         ├─ markets/        registro de mercados, liquidación, cuotas normalizadas, evaluador
                                                          ├─ calibration/    Brier, log loss, ECE, fiabilidad, control de calidad por mercado
                                                          ├─ backtesting/    walk-forward sin fuga de información
                                                          ├─ value_engine/   categorías de valor y NO BET
@@ -78,8 +84,8 @@ Un modelo solo produce recomendaciones si supera el control de calidad del merca
 |---|---|---|
 | 1 | Núcleo matemático, fútbol (Dixon-Coles), validación, motor de valor, ranking, dashboard, demo, CSV, The Odds API, football-data.org, envío a Telegram | Hecho |
 | 2 | Modelos NBA, NFL, MLB y tenis (Elo, regresión logística, Poisson por deporte) con sus fuentes gratuitas | Pendiente |
-| 3 | API-Football (Liga MX), alineaciones, lesiones, xG | Pendiente |
-| 4 | Mercados adicionales: córners, tarjetas, props | Pendiente |
+| 3 | API-Football (Liga MX), calendario gratis vía The Odds API, validación con cuotas de cierre, revisión de equipos, CLI de validación | En curso: conectores hechos y primera validación real corrida (sin ventaja frente al cierre). Faltan cuotas pre-cierre acumuladas, alineaciones, lesiones y xG |
+| 4 | Mercados adicionales: córners, tarjetas, props | Registrados en el módulo de mercados (se muestran implícita y margen); faltan datos y modelos |
 | 5 | Comparación de modelos y ensamblado, recalibración (isotónica / Platt) | Pendiente |
 | 6 | Bot de Telegram interactivo: /start /help /today /ranking /football /nba /nfl /mlb /tennis /event /performance /status /settings | Pendiente |
 | 7 | Programador de tareas (APScheduler): sincronización, snapshots y liquidación automáticos | Pendiente |
@@ -101,12 +107,16 @@ Completo y probado:
 - Dashboard en español con 8 pantallas y la etiqueta DEMO visible en todo dato sintético.
 - Importación CSV; adaptadores de The Odds API y football-data.org con caché, límite de cuota y registro.
 - Resumen a Telegram (vista previa y envío) con lista blanca, deduplicación y límite diario.
-- 107 pruebas automáticas, ninguna usa APIs reales.
+- Adaptador de API-Football (resultados, calendario, cuotas; detecta restricciones de plan), calendario gratuito desde The Odds API, revisión y fusión de equipos entre fuentes, línea de comandos (`python -m app.cli`).
+- Fuentes gratuitas adicionales: openfootball (resultados de 6 ligas europeas, dominio público) y ratings de Club Elo como referencia externa.
+- Módulo universal de cuotas y mercados ([CUOTAS_Y_MERCADOS.md](CUOTAS_Y_MERCADOS.md)): cuatro formatos de cuota, 70 mercados en 5 deportes con reglas de liquidación, estructura normalizada con identificadores estables, margen con método configurable, EV por estados, pantalla "Cuotas y mercados" y calculadora. El modelo de fútbol cubre 10 mercados; NBA, NFL, MLB y tenis aún no tienen modelo.
+- Captura manual de cuotas de cualquier fuente, con evaluación inmediata; no entra en el consenso del mercado.
+- 211 pruebas automáticas, ninguna usa APIs reales.
 
 Pendiente o incompleto:
-- Fútbol queda como parcial: el modelo está validado solo con datos sintéticos y CSV. Falta probarlo con datos reales recientes de Liga MX.
+- Fútbol queda como parcial. Primera validación real de Liga MX (23-oct-2026, ver sección 8): 1X2 bloqueado y Over/Under y ambos anotan experimentales. Hoy el modelo no encuentra ventaja y la plataforma recomienda NO BET.
 - NBA, NFL, MLB y tenis: solo están registrados; no tienen modelo ni datos (no se declaran implementados).
-- API-Football, alineaciones, lesiones, xG, córners y tarjetas.
+- Alineaciones, lesiones, xG, córners y tarjetas.
 - Comandos interactivos de Telegram y programador automático de tareas.
 - Limpieza de tipos con mypy (92 avisos, sin impacto en las pruebas).
 - Imágenes Docker sin construir en este entorno (no había daemon de Docker).
@@ -114,3 +124,25 @@ Pendiente o incompleto:
 ## 7. Resultado del demo (datos SINTÉTICOS)
 
 El demo genera una liga ficticia cuyo "mercado" ignora a propósito la ventaja de local, para que exista una ineficiencia que el modelo pueda detectar. Aun así, el control de calidad bloquea 1X2 (el modelo no supera al mercado en log loss) y totales (ECE 0.067 > 0.05). Solo "ambos anotan" pasa a producción. Esto muestra que la plataforma dice NO BET cuando la evidencia no alcanza. Nada de esto indica rentabilidad real.
+
+## 8. Primera validación con datos reales: Liga MX (23-oct-2026)
+
+Corrida en el equipo de Fernando con `scripts/validar_liga_mx.sh`, sin clave de The Odds API, con el CSV de football-data.co.uk:
+- 4,770 partidos importados y 25 equipos reconciliados, ninguno pendiente de revisión.
+- Entrenamiento: 1,304 partidos.
+- Walk-forward: 861 predicciones fuera de muestra entre 2024-03 y 2026-10.
+- Referencia de mercado: solo cuotas de cierre.
+
+| Mercado | Estado | Log loss modelo | Log loss frecuencias | Log loss mercado | ECE |
+|---|---|---|---|---|---|
+| 1X2 | Bloqueado | 1.0052 | 1.0638 | 0.9829 | 0.012 |
+| Over/Under 2.5 | Experimental | 0.6891 | 0.6891 | — | 0.043 |
+| Ambos anotan | Experimental | 0.6889 | 0.6830 | — | 0.057 |
+
+Lectura de los resultados:
+- **1X2:** el modelo supera a las frecuencias, pero es peor que el cierre sin margen (Δ +0.0223, IC90 [+0.0120, +0.0327]).
+- **Simulación al cierre:** 689 apuestas con ROI −7.9% (IC90 −17.4% a +2.7%).
+- **Over/Under y ambos anotan:** no mejoran a las frecuencias, y no hay cuotas históricas de esos mercados.
+- **Conclusión:** sin ventaja demostrada. La plataforma recomienda NO BET.
+
+Siguiente paso: acumular cuotas pre-cierre con The Odds API para medir CLV. Después, nuevas variables (Fase 3) y recalibración y ensamblado (Fase 5).

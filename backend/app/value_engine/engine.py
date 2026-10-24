@@ -107,7 +107,9 @@ def assess(
     calibration_score: float,
     now: datetime | None = None,
     p_samples: np.ndarray | None = None,
+    sample_score: float | None = None,
 ) -> Assessment:
+    """Evalúa una selección. ``sample_score`` (0-1) resume el tamaño de la muestra de validación."""
     now = now or datetime.now(UTC)
     a = Assessment(market=sel.market, selection=sel.selection, line=sel.line, label=sel.label,
                    category="sin_valor", category_label="", n_offers=len(sel.offers), model_status=model_status)
@@ -186,7 +188,7 @@ def assess(
         a.reasons.append(f"EV estimado {a.ev:+.1%} con la mejor cuota disponible: sin ventaja.")
         return finish("sin_valor")
 
-    a.quality_score = _quality_score(a, calibration_score, th)
+    a.quality_score = _quality_score(a, calibration_score, th, sample_score)
     if model_status != "production":
         a.reasons.append(
             f"EV puntual {a.ev:+.1%}, pero el modelo no está validado para este mercado (estado: {model_status})."
@@ -215,14 +217,20 @@ def assess(
     return finish("ventaja_no_confirmada")
 
 
-def _quality_score(a: Assessment, calibration_score: float, th: ValueThresholds) -> float:
+def _quality_score(a: Assessment, calibration_score: float, th: ValueThresholds,
+                   sample_score: float | None = None) -> float:
     """Puntuación SOLO para ordenar dentro de una categoría (no decide la categoría).
 
-    Combina, en este orden de importancia: frescura de la cuota, calibración, magnitud del EV,
-    incertidumbre (P(EV>0)), y robustez ante cambios de probabilidad.
+    Pesos: frescura de la cuota 0.20, calibración histórica 0.15, magnitud del EV 0.20 (saturada en 10%),
+    incertidumbre P(EV>0) 0.20, robustez 0.05, tamaño de muestra 0.10 y disponibilidad de la cuota
+    (número de operadores, saturada en 3) 0.10. Una cuota alta por sí sola no sube la puntuación:
+    solo cuenta a través del EV, que depende de la probabilidad del modelo.
     """
     fresh = 1.0 - min(1.0, (a.odds_age_minutes or 0) / max(th.max_odds_age_minutes, 1))
     ev_term = min(1.0, max(0.0, (a.ev or 0) / 0.10))
     ppos = a.prob_ev_positive or 0.0
     robust = min(1.0, max(0.0, (a.robustness or 0) / 0.05))
-    return round(0.25 * fresh + 0.20 * calibration_score + 0.20 * ev_term + 0.25 * ppos + 0.10 * robust, 4)
+    sample = 0.0 if sample_score is None else min(1.0, max(0.0, sample_score))
+    avail = min(1.0, a.n_offers / 3.0)
+    return round(0.20 * fresh + 0.15 * calibration_score + 0.20 * ev_term + 0.20 * ppos + 0.05 * robust
+                 + 0.10 * sample + 0.10 * avail, 4)

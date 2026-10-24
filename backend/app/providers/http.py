@@ -132,8 +132,13 @@ class ProviderHttpClient:
         cache_ttl: float = 600,
         cost: float = 1.0,
         credits_from_headers: Callable[[httpx.Response], tuple[float, float | None]] | None = None,
+        validate: Callable[[Any], None] | None = None,
     ) -> tuple[Any, dict[str, Any]]:
-        """Devuelve (json, meta). meta incluye 'from_cache' y 'fetched_at' (UTC ISO)."""
+        """Devuelve (json, meta). meta incluye 'from_cache' y 'fetched_at' (UTC ISO).
+
+        ``validate`` revisa el cuerpo de una respuesta 200 antes de guardarla en caché; si lanza
+        ProviderError, la llamada se registra como error y no se cachea (p. ej. errores de plan).
+        """
         params = params or {}
         cpath = self._cache_path(path, params)
         cached = self._read_cache(cpath, cache_ttl)
@@ -158,6 +163,15 @@ class ProviderHttpClient:
                     used, remaining = credits_from_headers(resp)
                 if resp.status_code == 200:
                     data = resp.json()
+                    if validate:
+                        try:
+                            validate(data)
+                        except ProviderError as exc:
+                            record_call(
+                                self.provider, path, "error", http_status=200, credits_used=used,
+                                credits_remaining=remaining, latency_ms=latency, error=str(exc)[:500],
+                            )
+                            raise
                     fetched_at = datetime.now(UTC).isoformat()
                     cpath.write_text(
                         json.dumps({"stored_at": time.time(), "fetched_at": fetched_at, "data": data}),

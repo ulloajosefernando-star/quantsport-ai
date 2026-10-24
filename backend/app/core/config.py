@@ -57,6 +57,7 @@ class Settings(BaseSettings):
     admin_token: str = Field("", description="Protege endpoints de escritura. Vacío = solo modo local")
     cache_dir: Path = DATA_DIR / "cache"
     imports_dir: Path = DATA_DIR / "imports"
+    reports_dir: Path = DATA_DIR / "reports"
     demo_seed: int = 20261023
 
     # Proveedores (todas las claves vacías por defecto)
@@ -67,6 +68,7 @@ class Settings(BaseSettings):
     football_data_org_per_minute: int = 10
     api_football_key: str = ""
     api_football_daily_limit: int = 100
+    api_football_per_minute: int = 10
 
     # Telegram
     telegram_bot_token: str = ""

@@ -29,6 +29,7 @@ from app.db.models import (
     TeamAlias,
 )
 from app.ingestion.store import Ingestor, IngestReport, as_utc
+from app.providers import clubelo
 from app.providers.csv_footballdata import parse_csv
 from app.providers.demo import DemoProvider
 
@@ -127,6 +128,11 @@ def refresh_demo_odds(s: Session, settings: Settings) -> dict:
 
 
 def import_csv(s: Session, content: bytes, filename: str) -> dict:
+    head = (content[:200].decode("utf-8-sig", errors="ignore") if isinstance(content, bytes) else content[:200])
+    if clubelo.is_clubelo_csv(head.splitlines()[0].split(",") if head else []):
+        rep = clubelo.import_ratings(s, content)
+        s.commit()
+        return rep
     batch = parse_csv(content, filename, datetime.now(UTC))
     rep = Ingestor(s).ingest(batch)
     s.commit()

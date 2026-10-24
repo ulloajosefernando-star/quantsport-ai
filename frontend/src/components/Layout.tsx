@@ -8,6 +8,7 @@ const NAV = [
   { to: '/oportunidades', label: 'Oportunidades', icon: 'M4 18l5-6 4 3 7-9' },
   { to: '/rendimiento', label: 'Rendimiento', icon: 'M5 20V10M12 20V4M19 20v-7' },
   { to: '/fuentes', label: 'Fuentes', icon: 'M4 7c0-1.7 3.6-3 8-3s8 1.3 8 3-3.6 3-8 3-8-1.3-8-3zm0 0v10c0 1.7 3.6 3 8 3s8-1.3 8-3V7' },
+  { to: '/mercados', label: 'Cuotas y mercados', icon: 'M4 6h16M4 12h10M4 18h6m10-4l-3 3-2-2' },
   { to: '/herramientas', label: 'Calculadora', icon: 'M7 3h10a1 1 0 011 1v16a1 1 0 01-1 1H7a1 1 0 01-1-1V4a1 1 0 011-1zm2 4h6M9 12h2m2 0h2m-6 4h2m2 0h2' },
   { to: '/configuracion', label: 'Configuración', icon: 'M12 15a3 3 0 100-6 3 3 0 000 6zm7.4-3a7.4 7.4 0 00-.1-1.2l2-1.6-2-3.4-2.4 1a7.6 7.6 0 00-2-1.2L14.5 3h-5l-.4 2.6a7.6 7.6 0 00-2 1.2l-2.4-1-2 3.4 2 1.6a7.4 7.4 0 000 2.4l-2 1.6 2 3.4 2.4-1a7.6 7.6 0 002 1.2l.4 2.6h5l.4-2.6a7.6 7.6 0 002-1.2l2.4 1 2-3.4-2-1.6c.1-.4.1-.8.1-1.2z' },
 ]

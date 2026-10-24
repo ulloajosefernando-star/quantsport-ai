@@ -18,6 +18,7 @@ os.environ.update({
     "DATABASE_URL": f"sqlite:///{_TMP / 'test.db'}",
     "CACHE_DIR": str(_TMP / "cache"),
     "IMPORTS_DIR": str(_TMP / "imports"),
+    "REPORTS_DIR": str(_TMP / "reports"),
     "LOG_JSON": "false",
     "THE_ODDS_API_KEY": "",
     "FOOTBALL_DATA_ORG_TOKEN": "",

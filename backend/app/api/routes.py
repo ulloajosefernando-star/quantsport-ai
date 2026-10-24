@@ -25,13 +25,14 @@ from app.db.models import (
     Sport,
 )
 from app.db.session import get_db
-from app.ingestion import jobs
+from app.ingestion import jobs, teams
 from app.ingestion.store import as_utc, seed_sports
 from app.probability.ev import DEFINITIONS, ev_binary, min_odds_for_target
 from app.probability.margin import compare_methods
 from app.probability.odds import InvalidOddsError, decimal_to_american, decimal_to_fractional, to_decimal
 from app.providers.base import ProviderError
-from app.providers.registry import all_providers, get_provider
+from app.providers.normalize import COMPETITIONS
+from app.providers.registry import SEASON_AWARE, all_providers, get_provider
 from app.ranking.ranker import RankingFilters, analyze_upcoming, build_ranking, flatten, upcoming_events
 from app.reporting import budget, predictions
 from app.sports.football.service import football_service
@@ -251,7 +252,39 @@ def sources(db: Session = Depends(get_db), settings: Settings = Depends(get_sett
                           "error": r.error[:200]} for r in logs],
         "csv_files": [p.name for p in sorted(settings.imports_dir.glob("*.csv"))] if settings.imports_dir.exists()
         else [],
+        "catalog": [{"key": k, "name": m["name"], "country": m.get("country", ""),
+                     "providers": [prov for prov, field in (("api_football", "api_football"),
+                                                            ("the_odds_api", "odds_api"),
+                                                            ("football_data_org", "fdorg"),
+                                                            ("openfootball", "openfootball")) if m.get(field)]}
+                    for k, m in COMPETITIONS.items()],
     }
+
+
+@router.get("/teams/review", tags=["fuentes"])
+def teams_review(competition: str = Query(..., max_length=64), db: Session = Depends(get_db)) -> dict:
+    """Equipos con partidos programados pero sin historial, con sugerencias de fusión."""
+    try:
+        return teams.review(db, competition, get_thresholds(db).min_team_matches)
+    except teams.TeamMergeError as exc:
+        raise HTTPException(404, str(exc)) from exc
+
+
+class TeamMergeIn(BaseModel):
+    from_team_id: int = Field(gt=0)
+    into_team_id: int = Field(gt=0)
+
+
+@router.post("/teams/merge", tags=["fuentes"], dependencies=[Depends(require_admin)])
+def teams_merge(body: TeamMergeIn, db: Session = Depends(get_db)) -> dict:
+    try:
+        rep = teams.merge(db, body.from_team_id, body.into_team_id)
+    except teams.TeamMergeError as exc:
+        db.rollback()
+        raise HTTPException(409, str(exc)) from exc
+    db.commit()
+    football_service.invalidate()
+    return rep
 
 
 @router.post("/imports/csv", tags=["fuentes"], dependencies=[Depends(require_admin)])
@@ -271,12 +304,15 @@ async def import_csv(file: UploadFile = File(...), db: Session = Depends(get_db)
 
 @router.post("/providers/{key}/sync", tags=["fuentes"], dependencies=[Depends(require_admin)])
 def provider_sync(key: str, competition: str, kind: str = Query("odds", pattern="^(odds|results|fixtures)$"),
+                  season: str | None = Query(None, pattern=r"^\d{4}$"),
                   db: Session = Depends(get_db), settings: Settings = Depends(get_settings)) -> dict:
     p = get_provider(settings, key)
     if p is None:
         raise HTTPException(404, "Proveedor desconocido")
+    fn = {"odds": p.fetch_odds, "results": p.fetch_results, "fixtures": p.fetch_fixtures}[kind]
+    kwargs = {"season": season} if season and (kind == "results" or key in SEASON_AWARE) else {}
     try:
-        batch = {"odds": p.fetch_odds, "results": p.fetch_results, "fixtures": p.fetch_fixtures}[kind](competition)
+        batch = fn(competition, **kwargs)
     except ProviderError as exc:
         raise HTTPException(409, str(exc)) from exc
     from app.ingestion.store import Ingestor

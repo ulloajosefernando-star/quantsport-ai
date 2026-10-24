@@ -8,6 +8,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+from app.api.markets import router as markets_router
 from app.api.routes import router
 from app.core.config import get_settings
 from app.core.logging import configure_logging, get_logger
@@ -59,6 +60,7 @@ def create_app() -> FastAPI:
         return JSONResponse(status_code=500, content={"detail": "Error interno. Revisa los logs del servidor."})
 
     app.include_router(router)
+    app.include_router(markets_router)
     return app
 
 
