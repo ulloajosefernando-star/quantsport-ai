@@ -26,6 +26,7 @@ os.environ.update({
     "ADMIN_TOKEN": "",
     "API_FOOTBALL_KEY": "",
     "TELEGRAM_ALLOWED_CHAT_IDS": "",
+    "SCHEDULER_ENABLED": "false",
 })
 
 

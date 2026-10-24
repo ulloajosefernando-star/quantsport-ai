@@ -62,13 +62,23 @@ class Settings(BaseSettings):
 
     # Proveedores (todas las claves vacías por defecto)
     the_odds_api_key: str = ""
-    the_odds_api_regions: str = "eu,uk"
+    the_odds_api_regions: str = Field("eu", description="Cada región multiplica el coste; eu incluye Pinnacle")
     the_odds_api_monthly_credits: int = 500
     football_data_org_token: str = ""
     football_data_org_per_minute: int = 10
     api_football_key: str = ""
     api_football_daily_limit: int = 100
     api_football_per_minute: int = 10
+
+    # Programador automático (Fase 7). Apagado por defecto: nada consume créditos sin que lo actives.
+    scheduler_enabled: bool = False
+    scheduler_competitions: str = Field("mex_liga_mx", description="Claves separadas por coma")
+    scheduler_odds_times: str = Field("09:00,17:00", description="Horas locales de sincronización de cuotas")
+    scheduler_daily_time: str = Field("07:30", description="Hora local de resultados, calendario y liquidación")
+    scheduler_prekickoff_minutes: int = Field(45, ge=0, le=240,
+                                              description="Captura extra antes del inicio (0 = desactivada)")
+    scheduler_credit_reserve: int = Field(50, ge=0, description="Créditos de The Odds API que nunca usa el programador")
+    scheduler_scores: bool = Field(True, description="Resultados recientes de The Odds API (2 créditos al día por liga)")
 
     # Telegram
     telegram_bot_token: str = ""
@@ -87,6 +97,14 @@ class Settings(BaseSettings):
     @property
     def telegram_chat_ids(self) -> set[str]:
         return {c.strip() for c in self.telegram_allowed_chat_ids.split(",") if c.strip()}
+
+    @property
+    def scheduler_competition_list(self) -> list[str]:
+        return [c.strip() for c in self.scheduler_competitions.split(",") if c.strip()]
+
+    @property
+    def scheduler_odds_time_list(self) -> list[str]:
+        return [t.strip() for t in self.scheduler_odds_times.split(",") if t.strip()]
 
     @property
     def is_demo(self) -> bool:

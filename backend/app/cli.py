@@ -8,6 +8,8 @@ Ejemplos (desde backend/):
     python -m app.cli validar --competicion mex_liga_mx
     python -m app.cli sincronizar --proveedor openfootball --competicion esp_la_liga --tipo results --temporadas 2024,2025
     python -m app.cli importar ~/Descargas/clubelo_2026-10-23.csv     # ratings Club Elo descargados a mano
+    python -m app.cli tarea diaria        # ejecuta ahora una tarea del programador (diaria | cuotas | previa)
+    python -m app.cli programador         # deja el programador corriendo en esta terminal (Ctrl+C para salir)
 
 Nada se contrata ni se apuesta: los comandos solo leen fuentes configuradas y calculan.
 """
@@ -17,9 +19,7 @@ from __future__ import annotations
 import argparse
 import sys
 from datetime import UTC, datetime
-from urllib.parse import urlparse
 
-import httpx
 from sqlalchemy import select
 
 from app.core.config import get_settings
@@ -29,15 +29,13 @@ from app.db.migrate import upgrade_head
 from app.db.models import Competition
 from app.db.session import session_scope
 from app.ingestion import jobs, teams
+from app.ingestion.download import MAX_DOWNLOAD_BYTES, DownloadError, download
 from app.ingestion.store import Ingestor, seed_sports
 from app.providers.base import ProviderError
 from app.providers.registry import SEASON_AWARE, get_provider
 from app.reporting.validation_report import build_markdown
+from app.scheduler import runner as scheduler_runner
 from app.sports.football.service import football_service
-
-# Descargas directas permitidas: archivos públicos que el sitio ofrece para descargar.
-ALLOWED_DOWNLOAD_HOSTS = {"www.football-data.co.uk", "football-data.co.uk"}
-MAX_DOWNLOAD_BYTES = 10 * 1024 * 1024
 
 
 def _init() -> None:
@@ -54,19 +52,12 @@ def _init() -> None:
 
 def _read_source(src: str) -> tuple[bytes, str]:
     if src.startswith(("http://", "https://")):
-        url = urlparse(src)
-        if url.scheme != "https" or url.hostname not in ALLOWED_DOWNLOAD_HOSTS:
-            raise SystemExit(f"Solo se descargan archivos de {', '.join(sorted(ALLOWED_DOWNLOAD_HOSTS))} por https. "
-                             "Para otras fuentes, descarga el CSV y pasa la ruta local.")
-        resp = httpx.get(src, timeout=60, follow_redirects=True)
-        resp.raise_for_status()
-        if len(resp.content) > MAX_DOWNLOAD_BYTES:
-            raise SystemExit("Archivo demasiado grande (máximo 10 MB)")
-        name = url.path.rsplit("/", 1)[-1] or "descarga.csv"
-        dest = get_settings().imports_dir / name
-        dest.write_bytes(resp.content)
-        print(f"Descargado {src} → {dest}")
-        return resp.content, name
+        try:
+            content, name = download(src)
+        except DownloadError as exc:
+            raise SystemExit(str(exc)) from exc
+        print(f"Descargado {src} → {get_settings().imports_dir / name}")
+        return content, name
     with open(src, "rb") as fh:
         content = fh.read(MAX_DOWNLOAD_BYTES + 1)
     if len(content) > MAX_DOWNLOAD_BYTES:
@@ -159,6 +150,50 @@ def cmd_validar(a: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_tarea(a: argparse.Namespace) -> int:
+    settings = get_settings()
+    if settings.is_demo:
+        raise SystemExit("El programador solo funciona con DATA_MODE=real (pon DATA_MODE=real en .env).")
+    plan = monthly_plan_text()
+    print(plan)
+    res = scheduler_runner.run_task(a.nombre, manual=True, settings=settings)
+    print(f"Estado: {res['status']}")
+    print(res.get("detail") or res.get("reason", ""))
+    return 0 if res["status"] in ("ok", "skipped") else 1
+
+
+def monthly_plan_text() -> str:
+    from app.scheduler.tasks import monthly_plan
+
+    with session_scope() as s:
+        p = monthly_plan(s, get_settings())
+    fits = "dentro" if p["fits"] else "FUERA"
+    return (f"Créditos estimados al mes: {p['total']} (cuotas {p['odds']}, resultados {p['scores']}, previas "
+            f"{p['prekickoff']}) · disponibles {p['available']} ({fits} del límite) · usados este mes "
+            f"{p['used_this_month']:.0f}")
+
+
+def cmd_programador(a: argparse.Namespace) -> int:
+    import time
+
+    settings = get_settings()
+    if settings.is_demo:
+        raise SystemExit("El programador solo funciona con DATA_MODE=real (pon DATA_MODE=real en .env).")
+    configure_logging("INFO", False)
+    print(monthly_plan_text())
+    if not scheduler_runner.start(settings.model_copy(update={"scheduler_enabled": True})):
+        return 1
+    for j in scheduler_runner.next_runs():
+        print(f"  {j['id']}: próxima {j['next_run']}")
+    print("Programador en marcha. Ctrl+C para detenerlo.")
+    try:
+        while True:
+            time.sleep(60)
+    except KeyboardInterrupt:
+        scheduler_runner.stop()
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="python -m app.cli", description="QuantSport AI · herramientas de datos")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -181,6 +216,11 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("validar", help="Ajusta el modelo, valida (walk-forward) y escribe un informe")
     p.add_argument("--competicion", required=True)
     p.set_defaults(fn=cmd_validar)
+    p = sub.add_parser("tarea", help="Ejecuta ahora una tarea del programador")
+    p.add_argument("nombre", choices=["diaria", "cuotas", "previa"])
+    p.set_defaults(fn=cmd_tarea)
+    p = sub.add_parser("programador", help="Mantiene el programador corriendo en esta terminal")
+    p.set_defaults(fn=cmd_programador)
     a = ap.parse_args(argv)
     _init()
     return int(a.fn(a))

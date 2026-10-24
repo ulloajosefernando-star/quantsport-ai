@@ -100,6 +100,29 @@ def parse_events(data: list[dict], competition_key: str) -> list[NormalizedEvent
     return out
 
 
+def parse_scores(data: list[dict], competition_key: str) -> list[NormalizedEvent]:
+    """Partidos TERMINADOS de /scores (``completed`` = true). Los que siguen en juego se ignoran."""
+    meta = COMPETITIONS.get(competition_key, {})
+    out = []
+    for ev in data:
+        if not ev.get("completed"):
+            continue
+        try:
+            kickoff = datetime.fromisoformat(ev["commence_time"].replace("Z", "+00:00"))
+            home, away = ev["home_team"], ev["away_team"]
+            by_team = {x["name"]: int(x["score"]) for x in ev.get("scores") or []}
+            hs, as_ = by_team[home], by_team[away]
+        except (KeyError, TypeError, ValueError):
+            continue
+        out.append(NormalizedEvent(
+            sport="football", competition_key=competition_key, competition_name=meta.get("name", competition_key),
+            country=meta.get("country", ""), kickoff_utc=kickoff, home=canonical_team_name(home),
+            away=canonical_team_name(away), status="finished", home_score=hs, away_score=as_, source=SOURCE,
+            source_event_id=ev.get("id", ""),
+        ))
+    return out
+
+
 class TheOddsApiProvider(DataProvider):
     def __init__(self, settings: Settings, transport: httpx.BaseTransport | None = None) -> None:
         self.settings = settings
@@ -162,6 +185,20 @@ class TheOddsApiProvider(DataProvider):
         if meta.get("from_cache"):
             batch.warnings.append("Cuotas servidas desde caché (≤15 min).")
         return batch
+
+    def fetch_scores(self, competition_key: str, days_from: int = 3) -> ProviderBatch:
+        """Resultados de los últimos ``days_from`` días (1-3). Cuesta 2 créditos (1 sin daysFrom)."""
+        sport_key = COMPETITIONS.get(competition_key, {}).get("odds_api")
+        if not sport_key:
+            raise ProviderError(f"No hay sport_key de The Odds API para {competition_key}")
+        if not 1 <= days_from <= 3:
+            raise ProviderError("daysFrom debe estar entre 1 y 3")
+        data, _ = self.client.get_json(
+            f"/v4/sports/{sport_key}/scores",
+            {"apiKey": self.settings.the_odds_api_key, "daysFrom": days_from, "dateFormat": "iso"},
+            cache_ttl=3600, cost=2.0, credits_from_headers=_credits,
+        )
+        return ProviderBatch(source=SOURCE, fetched_at=datetime.now(UTC), events=parse_scores(data, competition_key))
 
     def fetch_fixtures(self, competition_key: str, days_ahead: int = 7) -> ProviderBatch:
         """Calendario desde /v4/sports/{sport}/events (no consume créditos)."""

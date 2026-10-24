@@ -204,14 +204,7 @@ def performance(db: Session = Depends(get_db)) -> dict:
 
 @router.post("/predictions/snapshot", tags=["rendimiento"], dependencies=[Depends(require_admin)])
 def predictions_snapshot(db: Session = Depends(get_db), settings: Settings = Depends(get_settings)) -> dict:
-    th = get_thresholds(db)
-    rows = build_ranking(db, th, RankingFilters(include_no_value=True), settings.timezone)
-    mv = {}
-    for comp in db.scalars(select(Competition)):
-        st = football_service.state(db, comp, th)
-        if st.model_version_id:
-            mv[comp.key] = st.model_version_id
-    return predictions.snapshot(db, rows, mv)
+    return predictions.snapshot_ranking(db, settings.timezone)
 
 
 @router.post("/predictions/settle", tags=["rendimiento"], dependencies=[Depends(require_admin)])

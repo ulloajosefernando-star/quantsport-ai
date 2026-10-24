@@ -5,6 +5,7 @@ import type { ProviderRow } from '../types/api'
 import { Button, Card, ErrorBox, Loading, SyntheticTag } from '../components/ui'
 import { ago, localTime, pct } from '../lib/format'
 import { SyncCard, TeamReviewCard, type CatalogItem } from '../components/SourceTools'
+import { SchedulerCard } from '../components/SchedulerCard'
 
 interface Resp {
   providers: ProviderRow[]
@@ -115,6 +116,7 @@ export default function Sources() {
         </Card>
       </div>
 
+      <SchedulerCard />
       <SyncCard catalog={data.catalog} onDone={reload} />
       <TeamReviewCard competitions={data.coverage.filter((c) => !c.is_synthetic)} onDone={reload} />
 

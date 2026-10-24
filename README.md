@@ -4,7 +4,7 @@ Plataforma de análisis cuantitativo deportivo. Calcula probabilidades, compara 
 
 > **Aviso.** Es un análisis probabilístico, no una garantía de resultado. La plataforma no realiza apuestas, no deposita dinero, no inicia sesión en casas de apuestas ni ejecuta transacciones financieras. Un ROI histórico positivo no demuestra rentabilidad futura.
 
-Estado actual: **Fase 1 completa y Fase 3 (datos reales de fútbol) en curso**. El detalle de lo completo y lo pendiente, las fuentes, los costes en MXN y el plan por fases están en [docs/ARQUITECTURA_Y_PRESUPUESTO.md](docs/ARQUITECTURA_Y_PRESUPUESTO.md).
+Estado actual: **Fase 1 completa, Fase 3 (datos reales de fútbol) en curso y Fase 7 (programador automático) lista**. El detalle de lo completo y lo pendiente, las fuentes, los costes en MXN y el plan por fases están en [docs/ARQUITECTURA_Y_PRESUPUESTO.md](docs/ARQUITECTURA_Y_PRESUPUESTO.md).
 
 ## Requisitos
 
@@ -108,6 +108,27 @@ Hay 70 mercados registrados en fútbol, NBA, NFL, MLB y tenis. Hoy solo fútbol 
 
 **Captura manual.** La plataforma no se conecta a ninguna casa de apuestas. Para evaluar una cuota que ves en cualquier casa o fuente, abre el partido en **Cartelera → detalle** y usa **Evaluar una cuota de cualquier casa o fuente**. La cuota queda guardada con origen `manual` y no entra en el consenso del mercado. Si la evidencia es débil, la respuesta sigue siendo NO BET.
 
+## Programador automático
+
+Viene apagado. Para encenderlo, en `.env`:
+
+```bash
+DATA_MODE=real
+SCHEDULER_ENABLED=true
+THE_ODDS_API_KEY=tu_clave_gratuita   # sin clave solo hace los pasos gratuitos
+THE_ODDS_API_REGIONS=eu              # 1 región = 2 créditos por consulta de cuotas
+```
+
+Funciona mientras el backend esté encendido, o en una terminal aparte con `python -m app.cli programador`. Tareas (hora local, configurables con `SCHEDULER_*`):
+
+- **Diaria (07:30):** descarga el CSV de football-data.co.uk, actualiza calendario y resultados, liquida pronósticos con su CLV y guarda la foto del ranking. Si el equipo estuvo apagado, se pone al día al arrancar.
+- **Cuotas (09:00 y 17:00):** consulta 1X2 y totales.
+- **Previa (cada 15 min):** 45 minutos antes de cada partido toma una última foto de cuotas y registra el pronóstico.
+
+Cada tarea se ejecuta una sola vez por periodo, aunque reinicies. Antes de cada consulta de pago revisa el presupuesto mensual de créditos y deja una reserva (`SCHEDULER_CREDIT_RESERVE`). Si no alcanza, omite esa consulta y sigue con los pasos gratuitos. El plan por defecto usa unos 282 de los 500 créditos gratis. Estado, plan de créditos y botones para ejecutar a mano: **Fuentes de datos → Programador automático**, o `python -m app.cli tarea diaria|cuotas|previa`.
+
+El programador nunca apuesta, no deposita y no inicia sesión en ninguna casa.
+
 ## Telegram
 
 Crea un bot con @BotFather y define `TELEGRAM_BOT_TOKEN` y `TELEGRAM_ALLOWED_CHAT_IDS`. En **Configuración → Telegram** puedes ver la vista previa y enviar el resumen. Solo se envía a los chats autorizados y con un límite diario. Los comandos interactivos llegan en la Fase 6.
@@ -119,7 +140,7 @@ Inicio, Cartelera, Oportunidades, Detalle de evento, Rendimiento y validación, 
 ## Pruebas
 
 ```bash
-./scripts/test.sh      # ruff + pytest (211 pruebas) + build del frontend
+./scripts/test.sh      # ruff + pytest (222 pruebas) + build del frontend
 ```
 
 Ninguna prueba usa APIs reales ni consume cuotas: todo el HTTP se simula con `httpx.MockTransport`.
