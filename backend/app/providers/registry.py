@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from app.core.config import Settings
 from app.providers.api_football import ApiFootballProvider
+from app.providers.balldontlie import BallDontLieProvider
 from app.providers.base import DataProvider
 from app.providers.csv_footballdata import CsvProvider
 from app.providers.demo import DemoProvider
@@ -22,6 +23,7 @@ def all_providers(settings: Settings) -> list[DataProvider]:
         TheOddsApiProvider(settings),
         ApiFootballProvider(settings),
         OpenFootballProvider(settings),
+        BallDontLieProvider(settings),
         *pending_providers(),
     ]
 

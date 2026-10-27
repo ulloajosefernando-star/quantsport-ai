@@ -25,7 +25,8 @@ Fecha de verificación: 23-oct-2026. Los precios se consultaron en las páginas 
 | openfootball (football.json) | Inglaterra 1.ª/2.ª, España, Alemania, Italia, Francia (sin Liga MX) | Resultados y calendario; se usa para cruzar resultados con otras fuentes | Sí, dominio público | — | Adaptador completo |
 | Club Elo | Clubes europeos (sin Liga MX) | Ratings Elo diarios; referencia externa en el detalle de cada partido, no entra en el modelo | Sí | — | Importación manual de CSV (su robots.txt no permite descargas automáticas) |
 | TheSportsDB | Incluye Liga MX | Calendario y resultados, sin cuotas | Clave de prueba con límites muy bajos (15 partidos por consulta de temporada) | 9 USD/mes (≈ 166 MXN) | No integrado; opcional si se decide pagar |
-| nflverse, MLB Stats API, NBA, tenis | NFL, MLB, NBA, tenis | Datos de cada deporte | Sí, en general | — | Registrados como pendientes (Fase 2) |
+| balldontlie | NBA | Partidos y marcadores (plan Free, 5 consultas/min) | Sí, con clave personal | GOAT 39.99 USD/mes (incluye cuotas): no se usa | Adaptador completo (Fase 2, NBA) |
+| nflverse, MLB Stats API, tenis | NFL, MLB, tenis | Datos de cada deporte | Sí, en general | — | Registrados como pendientes (Fase 2) |
 
 Coste de The Odds API: cada consulta de cuotas cuesta mercados × regiones créditos. Consultar 1X2 y totales en una región cuesta 2 créditos por liga. Con 2 ligas y 2 consultas al día son unos 240 créditos al mes, dentro del plan gratis. Los endpoints `/sports` y `/events` no consumen créditos. La plataforma lee las cabeceras `x-requests-remaining/used/last` y se detiene antes de agotar la cuota.
 
@@ -83,7 +84,7 @@ Un modelo solo produce recomendaciones si supera el control de calidad del merca
 | Fase | Contenido | Estado |
 |---|---|---|
 | 1 | Núcleo matemático, fútbol (Dixon-Coles), validación, motor de valor, ranking, dashboard, demo, CSV, The Odds API, football-data.org, envío a Telegram | Hecho |
-| 2 | Modelos NBA, NFL, MLB y tenis (Elo, regresión logística, Poisson por deporte) con sus fuentes gratuitas | Pendiente |
+| 2 | Modelos NBA, NFL, MLB y tenis con sus fuentes gratuitas | NBA hecha (ratings de puntos, experimental); NFL, MLB y tenis pendientes |
 | 3 | API-Football (Liga MX), calendario gratis vía The Odds API, validación con cuotas de cierre, revisión de equipos, CLI de validación | En curso: conectores hechos y primera validación real corrida (sin ventaja frente al cierre). Faltan cuotas pre-cierre acumuladas, alineaciones, lesiones y xG |
 | 4 | Mercados adicionales: córners, tarjetas, props | Registrados en el módulo de mercados (se muestran implícita y margen); faltan datos y modelos |
 | 5 | Comparación de modelos y ensamblado, recalibración (isotónica / Platt) | Pendiente |
@@ -109,13 +110,14 @@ Completo y probado:
 - Resumen a Telegram (vista previa y envío) con lista blanca, deduplicación y límite diario.
 - Adaptador de API-Football (resultados, calendario, cuotas; detecta restricciones de plan), calendario gratuito desde The Odds API, revisión y fusión de equipos entre fuentes, línea de comandos (`python -m app.cli`).
 - Fuentes gratuitas adicionales: openfootball (resultados de 6 ligas europeas, dominio público) y ratings de Club Elo como referencia externa.
-- Módulo universal de cuotas y mercados ([CUOTAS_Y_MERCADOS.md](CUOTAS_Y_MERCADOS.md)): cuatro formatos de cuota, 70 mercados en 5 deportes con reglas de liquidación, estructura normalizada con identificadores estables, margen con método configurable, EV por estados, pantalla "Cuotas y mercados" y calculadora. El modelo de fútbol cubre 10 mercados; NBA, NFL, MLB y tenis aún no tienen modelo.
+- Módulo universal de cuotas y mercados ([CUOTAS_Y_MERCADOS.md](CUOTAS_Y_MERCADOS.md)): cuatro formatos de cuota, 70 mercados en 5 deportes con reglas de liquidación, estructura normalizada con identificadores estables, margen con método configurable, EV por estados, pantalla "Cuotas y mercados" y calculadora. El modelo de fútbol cubre 10 mercados y el de NBA 4 (ganador, hándicap, totales y totales por equipo); NFL, MLB y tenis aún no tienen modelo.
 - Captura manual de cuotas de cualquier fuente, con evaluación inmediata; no entra en el consenso del mercado.
 - 226 pruebas automáticas, ninguna usa APIs reales.
 
 Pendiente o incompleto:
 - Fútbol queda como parcial. Primera validación real de Liga MX (23-oct-2026, ver sección 8): 1X2 bloqueado y Over/Under y ambos anotan experimentales. Hoy el modelo no encuentra ventaja y la plataforma recomienda NO BET.
-- NBA, NFL, MLB y tenis: solo están registrados; no tienen modelo ni datos (no se declaran implementados).
+- NBA: datos reales de balldontlie y modelo de puntos validado con walk-forward; sin cuotas históricas gratuitas, queda experimental hasta acumular cuotas propias.
+- NFL, MLB y tenis: solo están registrados; no tienen modelo ni datos (no se declaran implementados).
 - Alineaciones, lesiones, xG, córners y tarjetas.
 - Comandos interactivos de Telegram y programador automático de tareas.
 - Limpieza de tipos con mypy (92 avisos, sin impacto en las pruebas).

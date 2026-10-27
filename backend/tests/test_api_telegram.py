@@ -28,7 +28,7 @@ def test_overview_flags_synthetic(client):
     assert d["n_upcoming"] > 0
     assert {p["key"] for p in d["providers"]} >= {"demo", "csv", "the_odds_api", "football_data_org"}
     statuses = {s["key"]: s["status"] for s in d["sports"]}
-    assert statuses["nba"] == "disabled" and statuses["football"] == "partial"
+    assert statuses["nba"] == "partial" and statuses["football"] == "partial"
 
 
 def test_events_and_detail(client):

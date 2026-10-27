@@ -8,6 +8,9 @@ Tres tareas, todas idempotentes (``jobs.run_job`` con una clave por día o por h
     previa   una captura extra unos minutos antes del inicio de cada horario de partidos; esa última
              cuota antes del inicio es la referencia de cierre para el CLV.
 
+NBA (competición ``nba``): resultados y calendario de balldontlie (gratis) en la diaria, y una sola captura
+de cuotas al día (ganador, hándicap y totales) antes del primer partido, para no gastar de más.
+
 Nunca se pasa del presupuesto: antes de cada llamada de pago se comprueba que los créditos usados este mes
 más el coste no superen el límite menos la reserva. Solo funciona en modo real: en modo demo no toca nada.
 """
@@ -16,6 +19,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -27,14 +31,16 @@ from app.ingestion import jobs
 from app.ingestion.download import download, fdcouk_url
 from app.ingestion.jobs import report_dict as report_summary
 from app.ingestion.store import Ingestor, as_utc
+from app.providers.balldontlie import BallDontLieProvider
 from app.providers.http import credits_used
-from app.providers.normalize import COMPETITIONS
+from app.providers.normalize import COMPETITIONS, competition_sport
 from app.providers.the_odds_api import SOURCE as ODDS_API
 from app.providers.the_odds_api import TheOddsApiProvider
 from app.reporting import predictions
 
 log = get_logger(__name__)
 ODDS_MARKETS = ("h2h", "totals")
+SPORT_ODDS_MARKETS = {"football": ODDS_MARKETS, "nba": ("h2h", "spreads", "totals")}
 PREKICKOFF_TICK_MINUTES = 15
 
 
@@ -42,9 +48,13 @@ class NotRealModeError(RuntimeError):
     pass
 
 
-def odds_call_cost(settings: Settings) -> int:
+def odds_markets(comp: str | None) -> tuple[str, ...]:
+    return SPORT_ODDS_MARKETS.get(competition_sport(comp) if comp else "football", ODDS_MARKETS)
+
+
+def odds_call_cost(settings: Settings, comp: str | None = None) -> int:
     regions = [r for r in settings.the_odds_api_regions.split(",") if r.strip()]
-    return len(ODDS_MARKETS) * max(len(regions), 1)
+    return len(odds_markets(comp)) * max(len(regions), 1)
 
 
 def budget_left(settings: Settings) -> float:
@@ -83,21 +93,31 @@ def _step(s: Session, out: dict, name: str, fn: Callable[[], dict | str]) -> Non
 def sync_odds(s: Session, settings: Settings, comp: str, provider: TheOddsApiProvider | None = None) -> dict | str:
     if not settings.the_odds_api_key:
         return "omitido: falta THE_ODDS_API_KEY"
-    cost = odds_call_cost(settings)
+    cost = odds_call_cost(settings, comp)
     if not _can_spend(settings, cost):
         return f"omitido por presupuesto: quedan {budget_left(settings):.0f} créditos (coste {cost}, reserva incluida)"
     p = provider or TheOddsApiProvider(settings)
-    return report_summary(Ingestor(s).ingest(p.fetch_odds(comp, ODDS_MARKETS)))
+    return report_summary(Ingestor(s).ingest(p.fetch_odds(comp, odds_markets(comp))))
+
+
+def sync_nba_games(s: Session, settings: Settings, nba: BallDontLieProvider | None = None) -> dict | str:
+    if not settings.balldontlie_api_key:
+        return "omitido: falta BALLDONTLIE_API_KEY (clave gratuita de balldontlie.io)"
+    p = nba or BallDontLieProvider(settings)
+    return report_summary(Ingestor(s).ingest(p.fetch_recent()))
 
 
 def task_daily(s: Session, settings: Settings, now: datetime | None = None,
-               provider: TheOddsApiProvider | None = None) -> dict:
+               provider: TheOddsApiProvider | None = None, nba: BallDontLieProvider | None = None) -> dict:
     _check_mode(settings)
     out: dict = {}
     p = provider or TheOddsApiProvider(settings)
     for comp in settings.scheduler_competition_list:
         if comp not in COMPETITIONS:
             out[comp] = "competición desconocida"
+            continue
+        if competition_sport(comp) == "nba":
+            _step(s, out, f"{comp}:partidos", lambda: sync_nba_games(s, settings, nba))
             continue
         url = fdcouk_url(comp, (now or datetime.now(UTC)).date())
         if url:
@@ -121,6 +141,8 @@ def task_odds(s: Session, settings: Settings, now: datetime | None = None,
     out: dict = {}
     p = provider or TheOddsApiProvider(settings)
     for comp in _odds_competitions(settings):
+        if competition_sport(comp) == "nba":
+            continue  # NBA: una sola captura al día, en la previa
         _step(s, out, f"{comp}:cuotas", lambda comp=comp: sync_odds(s, settings, comp, p))
     _step(s, out, "pronosticos", lambda: predictions.snapshot_ranking(s, settings.timezone))
     return out
@@ -148,7 +170,9 @@ def task_prekickoff(s: Session, settings: Settings, now: datetime | None = None,
         kicks = upcoming_kickoffs(s, comp, now + lead - timedelta(minutes=PREKICKOFF_TICK_MINUTES), now + lead)
         if not kicks:
             continue
-        key = f"{comp}:{kicks[0]:%Y-%m-%dT%H:%M}"
+        # NBA: una vez por día local (antes del primer partido); fútbol: una vez por horario de inicio
+        key = (f"{comp}:{as_utc(kicks[0]).astimezone(ZoneInfo(settings.timezone)):%Y-%m-%d}"
+               if competition_sport(comp) == "nba" else f"{comp}:{kicks[0]:%Y-%m-%dT%H:%M}")
         out[key] = jobs.run_job(s, "previa_liga", key, lambda comp=comp: sync_odds(s, settings, comp, p))
     if out:
         _step(s, out, "pronosticos", lambda: predictions.snapshot_ranking(s, settings.timezone))
@@ -167,19 +191,23 @@ def monthly_plan(s: Session, settings: Settings, now: datetime | None = None) ->
     """Créditos estimados al mes con la configuración actual."""
     now = now or datetime.now(UTC)
     comps = _odds_competitions(settings) if settings.the_odds_api_key else []
+    football = [c for c in comps if competition_sport(c) != "nba"]
     cost = odds_call_cost(settings)
-    odds = len(comps) * len(settings.scheduler_odds_time_list) * 30 * cost
-    scores = len(comps) * 30 * 2 if settings.scheduler_scores else 0
+    odds = len(football) * len(settings.scheduler_odds_time_list) * 30 * cost
+    scores = len(football) * 30 * 2 if settings.scheduler_scores else 0
     slots = 0
     if settings.scheduler_prekickoff_minutes:
-        for c in comps:
+        for c in football:
             week = upcoming_kickoffs(s, c, now, now + timedelta(days=7))
             slots += len({k.replace(minute=0) for k in week}) or 12  # sin calendario: ~12 horarios por semana
     prekick = round(slots * 30 / 7) * cost
-    total = odds + scores + prekick
+    # NBA: una captura diaria (ganador, hándicap y totales) los ~30 días del mes con partidos
+    nba = sum(30 * odds_call_cost(settings, c) for c in comps if competition_sport(c) == "nba"
+              and settings.scheduler_prekickoff_minutes)
+    total = odds + scores + prekick + nba
     limit = settings.the_odds_api_monthly_credits - settings.scheduler_credit_reserve
     return {"competitions": comps, "odds_call_cost": cost, "odds": odds, "scores": scores, "prekickoff": prekick,
-            "total": total, "available": limit, "monthly_limit": settings.the_odds_api_monthly_credits,
+            "nba": nba, "total": total, "available": limit, "monthly_limit": settings.the_odds_api_monthly_credits,
             "reserve": settings.scheduler_credit_reserve, "used_this_month": credits_used(ODDS_API, "month"),
             "fits": total <= limit,
             "note": ("Si se acaba el presupuesto del mes, el programador se salta las llamadas de pago y sigue con "

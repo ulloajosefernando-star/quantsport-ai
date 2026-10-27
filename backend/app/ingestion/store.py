@@ -22,7 +22,8 @@ MATCH_WINDOW = timedelta(hours=36)
 
 SPORTS = {
     "football": ("Fútbol", "partial", "Fase 1: modelo Dixon-Coles operativo; fuentes reales dependen de configuración."),
-    "nba": ("NBA", "disabled", "Sin fuente de datos configurada ni modelo validado (Fase 2-3)."),
+    "nba": ("NBA", "partial", "Resultados de balldontlie y cuotas de The Odds API; modelo experimental hasta "
+                              "validarlo contra cuotas de cierre."),
     "nfl": ("NFL", "disabled", "Sin fuente de datos configurada ni modelo validado (Fase 2-3)."),
     "mlb": ("MLB", "disabled", "Sin fuente de datos configurada ni modelo validado (Fase 2-3)."),
     "tennis": ("Tenis", "disabled", "Sin fuente de datos configurada ni modelo validado (Fase 2-3)."),
@@ -41,6 +42,8 @@ def seed_sports(s: Session) -> None:
         sp = s.scalar(select(Sport).where(Sport.key == key))
         if sp is None:
             s.add(Sport(key=key, name=name, status=status, status_reason=reason))
+        elif (sp.status, sp.status_reason) != (status, reason):
+            sp.status, sp.status_reason = status, reason  # el estado lo define el código, no la base
     s.flush()
 
 

@@ -33,11 +33,13 @@ interface ResultRow {
   outcome: Outcome
   total_goals: number
   btts: boolean
-  market_1x2: [number, number, number] | null
-  closing_odds_1x2: [number, number, number] | null
+  market_1x2: number[] | null
+  closing_odds_1x2: number[] | null
   market_over25: number | null
   market_btts: number | null
-  model_1x2: [number, number, number] | null
+  model_1x2: number[] | null
+  model_margin?: number | null
+  model_total?: number | null
   model_over25: number | null
   model_btts: number | null
   model_pick: Outcome | null
@@ -59,8 +61,9 @@ interface Summary {
 }
 
 interface Resp {
-  competitions: { key: string; name: string; is_synthetic: boolean }[]
-  competition: { key: string; name: string; is_synthetic: boolean } | null
+  competitions: { key: string; name: string; is_synthetic: boolean; sport?: string }[]
+  competition: { key: string; name: string; is_synthetic: boolean; sport?: string } | null
+  selections?: Outcome[]
   teams: string[]
   items: ResultRow[]
   total: number
@@ -82,14 +85,12 @@ const STATE_META: Record<string, { label: string; cls: string }> = {
 
 const DATE_FMT = new Intl.DateTimeFormat('es-MX', { timeZone: TZ, day: '2-digit', month: 'short', year: 'numeric' })
 
-const OUTCOME_IDX: Record<Outcome, number> = { home: 0, draw: 1, away: 2 }
-
-function Probs({ p, outcome }: { p: [number, number, number] | null; outcome: Outcome }) {
+function Probs({ p, outcome, sels }: { p: number[] | null; outcome: Outcome; sels: Outcome[] }) {
   if (!p) return <span className="text-ink-500">—</span>
   return (
     <span className="num whitespace-nowrap">
       {p.map((x, i) => (
-        <span key={i} className={i === OUTCOME_IDX[outcome] ? 'font-semibold text-ink-100' : 'text-ink-400'}>
+        <span key={i} className={sels[i] === outcome ? 'font-semibold text-ink-100' : 'text-ink-400'}>
           {i > 0 && <span className="text-ink-600"> · </span>}
           {pct(x, 0)}
         </span>
@@ -123,6 +124,9 @@ export default function Results() {
   if (!data) return <Loading />
 
   const s = data.summary
+  const nba = data.competition?.sport === 'nba'
+  const sels: Outcome[] = data.selections ?? ['home', 'draw', 'away']
+  const mainLabel = nba ? 'ganador' : '1X2'
   const mvm = s.model_vs_market
   const pr = s.predictions
   const pages = Math.max(1, Math.ceil(data.total / data.page_size))
@@ -163,14 +167,19 @@ export default function Results() {
         <>
           <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
             {s.team ? (
-              <Stat label={s.team.name} value={`${s.team.won}G ${s.team.drawn}E ${s.team.lost}P`}
-                hint={`Goles ${s.team.goals_for}–${s.team.goals_against} en ${s.n_matches} partidos`} />
+              <Stat label={s.team.name} value={nba ? `${s.team.won}G ${s.team.lost}P` : `${s.team.won}G ${s.team.drawn}E ${s.team.lost}P`}
+                hint={`${nba ? 'Puntos' : 'Goles'} ${s.team.goals_for}–${s.team.goals_against} en ${s.n_matches} partidos`} />
             ) : (
               <Stat label="Partidos" value={s.n_matches}
-                hint={`Local ${pct(s.home_win, 0)} · Empate ${pct(s.draw, 0)} · Visita ${pct(s.away_win, 0)}`} />
+                hint={nba ? `Local ${pct(s.home_win, 0)} · Visita ${pct(s.away_win, 0)}`
+                  : `Local ${pct(s.home_win, 0)} · Empate ${pct(s.draw, 0)} · Visita ${pct(s.away_win, 0)}`} />
             )}
-            <Stat label="Goles por partido" value={num(s.avg_goals, 2)} hint={`Más de 2.5: ${pct(s.over_2_5, 0)} · Ambos anotan: ${pct(s.btts, 0)}`} />
-            <Stat label="Acierto del modelo (1X2)" value={pct(mvm?.model_accuracy, 1)}
+            {nba ? (
+              <Stat label="Puntos por partido" value={num(s.avg_goals, 1)} hint="Suma de ambos equipos, prórroga incluida" />
+            ) : (
+              <Stat label="Goles por partido" value={num(s.avg_goals, 2)} hint={`Más de 2.5: ${pct(s.over_2_5, 0)} · Ambos anotan: ${pct(s.btts, 0)}`} />
+            )}
+            <Stat label={`Acierto del modelo (${mainLabel})`} value={pct(mvm?.model_accuracy, 1)}
               hint={mvm?.market_accuracy != null
                 ? `Favorito del mercado: ${pct(mvm.market_accuracy, 1)} · ${mvm.n_model} partidos`
                 : `${mvm?.n_model ?? 0} partidos con predicción`} />
@@ -184,7 +193,7 @@ export default function Results() {
 
           {mvm?.model_log_loss != null && (
             <p className="text-xs text-ink-400">
-              Log loss 1X2 en {mvm.n} partidos con cuotas de cierre: modelo <span className="num text-ink-200">{num(mvm.model_log_loss, 4)}</span> vs
+              Log loss {mainLabel} en {mvm.n} partidos con cuotas de cierre: modelo <span className="num text-ink-200">{num(mvm.model_log_loss, 4)}</span> vs
               mercado <span className="num text-ink-200">{num(mvm.market_log_loss, 4)}</span> (menor es mejor).{' '}
               {mvm.model_log_loss > (mvm.market_log_loss ?? 0)
                 ? 'En este periodo el mercado de cierre fue más preciso que el modelo.'
@@ -192,7 +201,7 @@ export default function Results() {
             </p>
           )}
 
-          <Card title={`${data.total} partidos`} subtitle="Probabilidades en orden Local · Empate · Visita; en negrita, lo que pasó. Toca un partido para ver los pronósticos registrados."
+          <Card title={`${data.total} partidos`} subtitle={`Probabilidades en orden ${nba ? 'Local · Visita' : 'Local · Empate · Visita'}; en negrita, lo que pasó. Toca un partido para ver los pronósticos registrados.`}
             actions={pages > 1 && (
               <>
                 <Button disabled={page <= 1} onClick={() => { setPage(page - 1); setOpen(null) }}>Anterior</Button>
@@ -231,8 +240,8 @@ export default function Results() {
                             {r.home_score}–{r.away_score}
                             {r.ht && <span className="ml-1 text-[11px] text-ink-500">({r.ht[0]}–{r.ht[1]})</span>}
                           </td>
-                          <td className="px-2 py-2 text-xs"><Probs p={r.market_1x2} outcome={r.outcome} /></td>
-                          <td className="px-2 py-2 text-xs"><Probs p={r.model_1x2} outcome={r.outcome} /></td>
+                          <td className="px-2 py-2 text-xs"><Probs p={r.market_1x2} outcome={r.outcome} sels={sels} /></td>
+                          <td className="px-2 py-2 text-xs"><Probs p={r.model_1x2} outcome={r.outcome} sels={sels} /></td>
                           <td className="px-2 py-2 text-center text-xs">
                             {r.model_hit == null ? <span className="text-ink-500">—</span>
                               : r.model_hit ? <span className="text-emerald-300">Sí</span> : <span className="text-rose-300">No</span>}
@@ -249,8 +258,17 @@ export default function Results() {
                             <td colSpan={7} className="px-4 py-3 text-xs">
                               <div className="mb-2 flex flex-wrap gap-x-6 gap-y-1 text-ink-400">
                                 <span>Cuotas medias de cierre: <span className="num text-ink-200">{r.closing_odds_1x2 ? r.closing_odds_1x2.map((o) => num(o, 2)).join(' · ') : '—'}</span></span>
-                                <span>Más de 2.5 ({r.total_goals > 2 ? 'sí' : 'no'}): mercado <span className="num text-ink-200">{pct(r.market_over25, 0)}</span>, modelo <span className="num text-ink-200">{pct(r.model_over25, 0)}</span></span>
-                                <span>Ambos anotan ({r.btts ? 'sí' : 'no'}): mercado <span className="num text-ink-200">{pct(r.market_btts, 0)}</span>, modelo <span className="num text-ink-200">{pct(r.model_btts, 0)}</span></span>
+                                {nba ? (
+                                  <>
+                                    <span>Diferencia (local − visita): real <span className="num text-ink-200">{r.home_score - r.away_score}</span>, modelo <span className="num text-ink-200">{num(r.model_margin, 1)}</span></span>
+                                    <span>Puntos totales: real <span className="num text-ink-200">{r.total_goals}</span>, modelo <span className="num text-ink-200">{num(r.model_total, 1)}</span></span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <span>Más de 2.5 ({r.total_goals > 2 ? 'sí' : 'no'}): mercado <span className="num text-ink-200">{pct(r.market_over25, 0)}</span>, modelo <span className="num text-ink-200">{pct(r.model_over25, 0)}</span></span>
+                                    <span>Ambos anotan ({r.btts ? 'sí' : 'no'}): mercado <span className="num text-ink-200">{pct(r.market_btts, 0)}</span>, modelo <span className="num text-ink-200">{pct(r.model_btts, 0)}</span></span>
+                                  </>
+                                )}
                                 <Link to={`/eventos/${r.event_id}`} className="text-emerald-300 hover:underline">Ver detalle</Link>
                               </div>
                               {r.predictions.length === 0 ? (

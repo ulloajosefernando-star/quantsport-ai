@@ -60,7 +60,8 @@ EXCLUDED_FROM_CONSENSUS = {"Máximo mercado"}
 # Cuotas capturadas a mano: se evalúan como oferta, pero no forman la referencia de mercado
 MANUAL_SOURCE = "manual"
 
-MARKET_SELECTIONS = {"1x2": ("home", "draw", "away"), "totals": ("over", "under"), "btts": ("yes", "no")}
+MARKET_SELECTIONS = {"1x2": ("home", "draw", "away"), "totals": ("over", "under"), "btts": ("yes", "no"),
+                     "moneyline": ("home", "away")}
 
 
 def consensus_fair(odds: pd.DataFrame, market: str, line: float | None, closing: bool) -> dict[int, dict[str, float]]:

@@ -68,6 +68,19 @@ Qué esperar con datos gratuitos:
 - El CSV de Liga MX solo trae cuotas de **cierre** de 1X2. El modelo se compara contra ese cierre, que es la referencia más difícil de superar.
 - Over/Under y ambos anotan quedan como "experimental" hasta que haya cuotas históricas de esos mercados. La plataforma las va acumulando sola cada vez que sincronizas The Odds API.
 
+## NBA (gratis, experimental)
+
+1. Crea una clave gratuita en [balldontlie.io](https://www.balldontlie.io) (plan Free: partidos y marcadores, 5 consultas por minuto) y ponla en `.env` como `BALLDONTLIE_API_KEY`.
+2. Descarga el historial y valida el modelo (tarda unos 15 minutos por el límite de consultas):
+
+```bash
+cd backend && .venv/bin/python -m app.cli nba-historial --temporadas 2022,2023,2024,2025
+```
+
+3. Para que el programador siga la NBA, agrega `nba` en `.env`: `SCHEDULER_COMPETITIONS=mex_liga_mx,nba`. Cada día baja resultados y calendario de balldontlie (gratis) y toma una foto de cuotas de The Odds API (ganador, hándicap y totales: 3 créditos con una región, unos 90 al mes).
+
+El modelo NBA estima puntos de cada equipo con ratings de ataque y defensa, localía y más peso a los partidos recientes. No ve lesiones, descansos ni cambios de plantilla. No hay cuotas históricas gratuitas de la NBA, así que solo puede compararse con el mercado usando las cuotas que guarde el programador. Hasta reunir al menos 300 partidos con cuotas, todos sus mercados quedan en revisión y la recomendación es NO BET.
+
 ## Fuentes y sincronización
 
 | Fuente | Cómo se usa | Costo |
@@ -104,7 +117,7 @@ La pantalla **Cuotas y mercados** muestra cada mercado con cuota (de cualquier f
 
 Filtra por deporte, competición, evento, mercado, rango de cuota, probabilidad implícita, EV y edge. Elige el formato de cuota: decimal, americano, fraccionario o porcentaje. Incluye una calculadora: escribes una cuota en cualquier formato y, si das tu probabilidad, te devuelve EV, cuota justa y stake.
 
-Hay 70 mercados registrados en fútbol, NBA, NFL, MLB y tenis. Hoy solo fútbol tiene modelo, y cubre 10 mercados. En los demás la plataforma muestra implícita y margen, y dice que no hay modelo en vez de inventar una probabilidad. Fórmulas, ejemplos y cobertura: [docs/CUOTAS_Y_MERCADOS.md](docs/CUOTAS_Y_MERCADOS.md).
+Hay 70 mercados registrados en fútbol, NBA, NFL, MLB y tenis. Fútbol tiene modelo en 10 mercados y la NBA en 4 (ganador, hándicap, totales y totales por equipo, todos en revisión). En los demás la plataforma muestra implícita y margen, y dice que no hay modelo en vez de inventar una probabilidad. Fórmulas, ejemplos y cobertura: [docs/CUOTAS_Y_MERCADOS.md](docs/CUOTAS_Y_MERCADOS.md).
 
 **Captura manual.** La plataforma no se conecta a ninguna casa de apuestas. Para evaluar una cuota que ves en cualquier casa o fuente, abre el partido en **Cartelera → detalle** y usa **Evaluar una cuota de cualquier casa o fuente**. La cuota queda guardada con origen `manual` y no entra en el consenso del mercado. Si la evidencia es débil, la respuesta sigue siendo NO BET.
 
@@ -156,7 +169,7 @@ Inicio, Cartelera, Oportunidades, Detalle de evento, Resultados, Rendimiento y v
 ## Pruebas
 
 ```bash
-./scripts/test.sh      # ruff + pytest (226 pruebas) + build del frontend
+./scripts/test.sh      # ruff + pytest (236 pruebas) + build del frontend
 ```
 
 Ninguna prueba usa APIs reales ni consume cuotas: todo el HTTP se simula con `httpx.MockTransport`.

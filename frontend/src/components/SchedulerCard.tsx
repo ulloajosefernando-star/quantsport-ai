@@ -9,7 +9,7 @@ interface SchedulerStatus {
   config: { competitions: string[]; odds_times: string[]; daily_time: string; prekickoff_minutes: number; credit_reserve: number; scores: boolean }
   tasks: { key: string; label: string }[]
   next_runs: { id: string; task: string; next_run: string | null }[]
-  plan: { odds: number; scores: number; prekickoff: number; total: number; available: number; monthly_limit: number; reserve: number; used_this_month: number; fits: boolean; odds_call_cost: number; note: string }
+  plan: { odds: number; scores: number; prekickoff: number; nba?: number; total: number; available: number; monthly_limit: number; reserve: number; used_this_month: number; fits: boolean; odds_call_cost: number; note: string }
   recent: { job: string; run_key: string; status: string; attempts: number; started_at: string; finished_at: string | null; detail: string }[]
 }
 
@@ -62,7 +62,7 @@ export function SchedulerCard() {
           <div className="flex justify-between"><span>Créditos estimados al mes (The Odds API)</span><b className={p.fits ? 'text-ink-100' : 'text-rose-300'}>{p.total} / {p.available}</b></div>
           <div className="mt-1 h-2 rounded bg-ink-800"><div className={`h-2 rounded ${p.fits ? 'bg-emerald-500' : 'bg-rose-500'}`} style={{ width: `${share * 100}%` }} /></div>
           <div className="mt-1 text-[11px] text-ink-400">
-            cuotas {p.odds} · resultados {p.scores} · previas {p.prekickoff} · reserva {p.reserve} de {p.monthly_limit} · usados este mes {Math.round(p.used_this_month)}
+            cuotas {p.odds} · resultados {p.scores} · previas {p.prekickoff}{p.nba ? ` · NBA ${p.nba}` : ''} · reserva {p.reserve} de {p.monthly_limit} · usados este mes {Math.round(p.used_this_month)}
           </div>
           {!p.fits && <div className="mt-1 text-[11px] text-rose-300">No cabe en el plan: usa una sola región, menos horarios o desactiva la captura previa.</div>}
           <div className="mt-1 text-[11px] text-ink-400">{p.note}</div>

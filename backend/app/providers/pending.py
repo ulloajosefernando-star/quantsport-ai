@@ -42,14 +42,6 @@ def pending_providers() -> list[PendingProvider]:
         ),
         PendingProvider(
             ProviderInfo(
-                key="nba_source", name="Fuente NBA (por decidir)", kind=ProviderKind.PENDING,
-                sports=["nba"], capabilities=[], configured=False,
-                cost_note="Por evaluar (balldontlie / API-NBA tienen planes gratuitos limitados).",
-            ),
-            "Fuente autorizada por seleccionar en Fase 3.",
-        ),
-        PendingProvider(
-            ProviderInfo(
                 key="tennis_datasets", name="Datasets de tenis (Sackmann / tennis-data.co.uk)",
                 kind=ProviderKind.PENDING, sports=["tennis"], capabilities=[], configured=False,
                 docs_url="https://github.com/JeffSackmann/tennis_atp",

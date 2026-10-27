@@ -57,7 +57,14 @@ COMPETITIONS: dict[str, dict] = {
         "api_football": 253, "name": "MLS", "country": "Estados Unidos",
         "fdcouk_new": ("USA", "MLS"), "odds_api": "soccer_usa_mls",
     },
+    "nba": {"sport": "nba", "name": "NBA", "country": "Estados Unidos", "odds_api": "basketball_nba",
+            "tz": "America/New_York"},
 }
+
+
+def competition_sport(key: str) -> str:
+    """Deporte de una competición canónica (fútbol si no se indica)."""
+    return COMPETITIONS.get(key, {}).get("sport", "football")
 
 
 def competition_by_code(provider_field: str, code: str | tuple) -> str | None:

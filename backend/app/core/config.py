@@ -69,6 +69,7 @@ class Settings(BaseSettings):
     api_football_key: str = ""
     api_football_daily_limit: int = 100
     api_football_per_minute: int = 10
+    balldontlie_api_key: str = Field("", description="Clave gratuita de balldontlie.io (resultados NBA)")
 
     # Programador automático (Fase 7). Apagado por defecto: nada consume créditos sin que lo actives.
     scheduler_enabled: bool = False

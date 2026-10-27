@@ -8,6 +8,7 @@ import { localTime, num, pct, signedPct } from '../lib/format'
 
 interface Resp {
   competitions: CompetitionPerf[]
+  nba?: { competition: string; competition_key: string; model_status: string; error?: string | null; gate: { market: string; check: string; passed: boolean; detail: string }[]; walkforward: Record<string, any> }[]
   tracked: { registered: number; settled: number; note?: string; warning?: string; actionable?: Betting; probability_quality?: Record<string, number>; by_category?: Record<string, { n: number; roi: number }>; by_model_version?: Record<string, { n: number; roi: number }> }
   model_versions: { id: number; competition_key: string; name: string; version: string; fingerprint: string; trained_at: string; train_period: [string, string]; validation_period: string; status: string; status_reason: string; is_synthetic: boolean }[]
 }
@@ -133,6 +134,43 @@ export default function Performance() {
                 <div>
                   <h3 className="mb-2 text-sm font-medium">Simulación económica (cuota media pre-cierre, stake plano 1 u)</h3>
                   {w.betting && <BettingBlock b={w.betting} kind={w.odds_kind} />}
+                </div>
+              </div>
+            )}
+          </Card>
+        )
+      })}
+
+      {(data.nba ?? []).map((c) => {
+        const w = c.walkforward
+        const ml = w.moneyline as (MarketEval & { margin_mae?: number; total_mae?: number }) | undefined
+        return (
+          <Card key={c.competition_key} title={`${c.competition} (baloncesto)`}
+            subtitle={w.status === 'ok' ? `Walk-forward: ${w.n_eval} partidos fuera de muestra, reentreno cada ${w.refit_days} días, test ${localTime(w.test_period?.[0])} → ${localTime(w.test_period?.[1])}. Con cuotas guardadas: ${w.market_reference?.con_cuotas ?? 0}.` : (w.reason ?? c.error ?? '')}
+            actions={<span className="text-xs">Ganador: <ModelBadge status={c.model_status} /></span>}>
+            {w.status !== 'ok' || !ml ? <Empty>{w.reason ?? c.error ?? 'Validación no disponible'}</Empty> : (
+              <div className="space-y-4">
+                <div className="grid gap-4 lg:grid-cols-2">
+                  <MarketBlock label="Ganador (moneyline)" m={ml} />
+                  <div className="space-y-3">
+                    <div className="grid grid-cols-2 gap-3">
+                      <Stat label="Acierto del modelo" value={pct(ml.model.accuracy as number, 1)} />
+                      <Stat label="Error medio diferencia" value={`${num(ml.margin_mae, 1)} pts`} hint="Hándicap: |predicho − real|" />
+                      <Stat label="Error medio total" value={`${num(ml.total_mae, 1)} pts`} hint="Totales: |predicho − real|" />
+                    </div>
+                    <table className="w-full text-xs">
+                      <tbody>
+                        {c.gate.map((g, i) => (
+                          <tr key={i} className="border-b border-ink-800">
+                            <td className="py-1 pr-3">{g.check}</td>
+                            <td className={`py-1 pr-3 ${g.passed ? 'text-emerald-300' : 'text-rose-300'}`}>{g.passed ? 'Supera' : 'No supera'}</td>
+                            <td className="py-1 text-ink-300">{g.detail}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                    <p className="text-xs text-ink-400">Hándicap y totales siguen experimentales: no hay cuotas históricas gratuitas para validarlos contra el mercado; se compararán con las cuotas que guarde el programador.</p>
+                  </div>
                 </div>
               </div>
             )}

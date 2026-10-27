@@ -7,7 +7,9 @@ inventa una probabilidad.
 
 Estado actual:
     fútbol        Dixon-Coles (matriz de marcadores). Mercados derivados del marcador final.
-    NBA, NFL, MLB, tenis   sin modelo todavía (Fase 2): se muestran implícita y margen, sin EV.
+    NBA           ratings de puntos (app.sports.nba): ganador, hándicap y totales; experimental hasta
+                  validarlo contra cuotas de cierre.
+    NFL, MLB, tenis   sin modelo todavía: se muestran implícita y margen, sin EV.
 """
 
 from __future__ import annotations
@@ -23,7 +25,7 @@ from app.probability.settlement import SettlementDistribution, aggregate, binary
 from app.sports.football.scores import ScoreMatrix
 
 NO_MODEL = {
-    "nba": "Sin modelo de NBA todavía (Fase 2). Se muestran probabilidad implícita y margen, sin EV del modelo.",
+    "nba": "Sin modelo de NBA para este mercado: solo ganador, hándicap y totales (partido completo).",
     "nfl": "Sin modelo de NFL todavía (Fase 2). Se muestran probabilidad implícita y margen, sin EV "
                          "del modelo.",
     "mlb": "Sin modelo de MLB todavía (Fase 2). Se muestran probabilidad implícita y margen, sin EV del modelo.",
@@ -167,7 +169,10 @@ def coverage() -> dict[str, dict[str, str | None]]:
     for sport in registry.sports():
         out[sport] = {}
         for m in registry.for_sport(sport):
-            if sport != "football":
+            if sport == "nba":
+                ok = m.key in ("moneyline", "spread", "totals", "team_totals") and not m.live_only
+                out[sport][m.key] = None if ok else no_model_reason(sport)
+            elif sport != "football":
                 out[sport][m.key] = no_model_reason(sport)
             elif m.key in FOOTBALL_UNSUPPORTED:
                 out[sport][m.key] = FOOTBALL_UNSUPPORTED[m.key]
