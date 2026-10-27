@@ -34,7 +34,7 @@ from app.providers.base import ProviderError
 from app.providers.normalize import COMPETITIONS
 from app.providers.registry import SEASON_AWARE, all_providers, get_provider
 from app.ranking.ranker import RankingFilters, analyze_upcoming, build_ranking, flatten, upcoming_events
-from app.reporting import budget, predictions, results
+from app.reporting import budget, match_stats, predictions, results
 from app.sports.football.service import football_service
 from app.sports.nba.service import nba_service
 from app.telegram.notifier import TelegramNotifier
@@ -161,6 +161,17 @@ def event_detail(event_id: int, db: Session = Depends(get_db), settings: Setting
     an["kickoff_local"] = _local(ev.kickoff_utc, settings.timezone)
     an["timezone"] = settings.timezone
     return an
+
+
+@router.get("/events/{event_id}/stats", tags=["cartelera"])
+def event_stats(event_id: int, db: Session = Depends(get_db)) -> dict:
+    """Estadística simple del partido con resultados pasados (forma, local/visitante, cara a cara)."""
+    ev = db.get(Event, event_id)
+    if ev is None:
+        raise HTTPException(404, "Evento no encontrado")
+    if ev.competition.sport.key != "football":
+        raise HTTPException(404, "Estadística simple disponible solo para fútbol")
+    return match_stats.match_stats(db, ev)
 
 
 # ---------------------------------------------------------------- oportunidades
