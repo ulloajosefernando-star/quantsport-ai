@@ -139,7 +139,8 @@ Ejemplo con probabilidades del modelo de local 45 %, empate 28 % y visitante 27 
 | Deporte | Modelo | Mercados evaluados | Sin evaluar (motivo) |
 |---|---|---|---|
 | Fútbol | Dixon-Coles (matriz de marcadores) | 1X2, doble oportunidad, DNB, hándicap europeo, hándicap asiático, totales, goles por equipo, ambos anotan, resultado exacto, primer equipo en marcar (experimental: supone goles como procesos de Poisson) | Descanso y descanso/final (el modelo usa marcadores finales), córners y tarjetas (no hay datos), próximo gol (no hay modelo en vivo) |
-| NBA, NFL, MLB, tenis | — | Ninguno: se muestran implícita, margen y sin margen | Sin modelo todavía (Fase 2) |
+| NBA | Ratings de ataque y defensa (normales de puntos), experimental hasta tener cuotas propias guardadas | Moneyline, spread, total, totales por equipo | Cuartos y mitades, props de jugadores (no hay datos ni modelo) |
+| NFL, MLB, tenis | — | Ninguno: se muestran implícita, margen y sin margen | Sin modelo todavía (Fase 2) |
 
 El 1X2, Over/Under 2.5 y ambos anotan pasan por el control de calidad (walk-forward). El resto de mercados de fútbol queda como **experimental**. Por eso nunca llega a "Candidato de valor", aunque muestre EV positivo.
 

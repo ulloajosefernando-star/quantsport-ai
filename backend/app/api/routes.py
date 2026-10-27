@@ -36,6 +36,7 @@ from app.providers.registry import SEASON_AWARE, all_providers, get_provider
 from app.ranking.ranker import RankingFilters, analyze_upcoming, build_ranking, flatten, upcoming_events
 from app.reporting import budget, predictions, results
 from app.sports.football.service import football_service
+from app.sports.nba.service import nba_service
 from app.telegram.notifier import TelegramNotifier
 from app.value_engine.engine import CATEGORIES
 
@@ -182,8 +183,16 @@ def opportunities(
 @router.get("/performance", tags=["rendimiento"])
 def performance(db: Session = Depends(get_db)) -> dict:
     th = get_thresholds(db)
-    comps = []
+    comps, nba = [], []
     for comp in db.scalars(select(Competition)):
+        if comp.sport.key == "nba":
+            st_n = nba_service.state(db, comp, th)
+            nba.append({"competition": comp.name, "competition_key": comp.key, "model_status": st_n.status,
+                        "error": st_n.error, "gate": st_n.gate.checks if st_n.gate else [],
+                        "model": st_n.model.metadata() if st_n.model else None, "walkforward": st_n.walkforward})
+            continue
+        if comp.sport.key != "football":
+            continue
         st = football_service.state(db, comp, th)
         comps.append({
             "competition": comp.name, "competition_key": comp.key, "is_synthetic": comp.is_synthetic,
@@ -198,7 +207,7 @@ def performance(db: Session = Depends(get_db)) -> dict:
                  "status": m.status, "status_reason": m.status_reason, "is_synthetic": m.is_synthetic,
                  "calibration": m.calibration_metrics, "economic": m.economic_metrics}
                 for m in db.scalars(select(ModelVersion).order_by(ModelVersion.trained_at.desc()).limit(50))]
-    return {"competitions": comps, "tracked": predictions.performance(db), "model_versions": versions,
+    return {"competitions": comps, "nba": nba, "tracked": predictions.performance(db), "model_versions": versions,
             "backtests": db.scalar(select(func.count(BacktestRun.id))) or 0}
 
 

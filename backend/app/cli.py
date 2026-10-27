@@ -10,6 +10,7 @@ Ejemplos (desde backend/):
     python -m app.cli importar ~/Descargas/clubelo_2026-10-23.csv     # ratings Club Elo descargados a mano
     python -m app.cli tarea diaria        # ejecuta ahora una tarea del programador (diaria | cuotas | previa)
     python -m app.cli programador         # deja el programador corriendo en esta terminal (Ctrl+C para salir)
+    python -m app.cli nba-historial --temporadas 2022,2023,2024,2025   # resultados NBA (balldontlie) y validación
 
 Nada se contrata ni se apuesta: los comandos solo leen fuentes configuradas y calculan.
 """
@@ -139,6 +140,11 @@ def cmd_validar(a: argparse.Namespace) -> int:
         if comp is None:
             raise SystemExit(f"No hay datos de {a.competicion}. Importa primero un CSV o sincroniza un proveedor.")
         print("Ajustando el modelo y ejecutando walk-forward (puede tardar unos minutos)…")
+        if comp.sport.key == "nba":
+            from app.sports.nba.service import nba_service
+
+            print(nba_report(nba_service.state(s, comp, get_thresholds(s), force=True)))
+            return 0
         st = football_service.state(s, comp, get_thresholds(s), force=True)
         md = build_markdown(st)
     out_dir = get_settings().reports_dir
@@ -147,6 +153,56 @@ def cmd_validar(a: argparse.Namespace) -> int:
     path.write_text(md, encoding="utf-8")
     print(md)
     print(f"Informe guardado en {path}")
+    return 0
+
+
+def nba_report(st) -> str:
+    """Resumen de texto del modelo NBA y su validación fuera de muestra."""
+    if st.model is None:
+        return f"Modelo NBA no disponible: {st.error}"
+    m = st.model.metadata()
+    lines = [f"Modelo NBA {m['name']} {m['version']} · {m['n_games']} partidos ({m['train_start']} a {m['train_end']})",
+             f"Media de puntos {m['league_avg_points']} · ventaja de local {m['home_advantage_points']} · "
+             f"desviación de la diferencia {m['sd_margin']}"]
+    wf = st.walkforward
+    sec = wf.get("moneyline")
+    if not sec:
+        lines.append(f"Validación: {wf.get('reason', 'no disponible')}")
+    else:
+        mod, base = sec["model"], sec["baseline_frecuencias"]
+        lines.append(f"Validación fuera de muestra ({wf['n_eval']} partidos): acierto {mod['accuracy']:.1%} · log loss "
+                     f"{mod['log_loss']:.4f} (frecuencia local {base['log_loss']:.4f}) · ECE {mod['ece']:.3f} · "
+                     f"error medio diferencia {sec['margin_mae']:.1f} pts, total {sec['total_mae']:.1f} pts")
+        if "baseline_mercado" in sec:
+            lines.append(f"Contra el mercado ({sec['baseline_mercado']['n']} partidos con cuotas): modelo "
+                         f"{sec['model_on_market_subset']['log_loss']:.4f} vs mercado "
+                         f"{sec['baseline_mercado']['log_loss']:.4f}")
+    lines.append(f"Estado: {st.status.upper()}")
+    lines += [f"  · {r}" for r in (st.gate.reasons if st.gate else [])]
+    return "\n".join(lines)
+
+
+def cmd_nba_historial(a: argparse.Namespace) -> int:
+    from app.providers.balldontlie import BallDontLieProvider
+    from app.sports.nba.service import nba_service
+
+    settings = get_settings()
+    p = BallDontLieProvider(settings)
+    seasons = [x.strip() for x in a.temporadas.split(",") if x.strip()]
+    with session_scope() as s:
+        for season in seasons:
+            print(f"Temporada {season}-{(int(season) + 1) % 100:02d}: descargando (5 consultas/min, paciencia)…")
+            try:
+                rep = Ingestor(s).ingest(p.fetch_results("nba", season))
+            except ProviderError as exc:
+                raise SystemExit(str(exc)) from exc
+            s.commit()
+            print(f"  {rep.events_created} nuevos, {rep.events_updated} actualizados, {rep.events_unchanged} sin cambios")
+        comp = s.scalar(select(Competition).where(Competition.key == "nba"))
+        if comp is None:
+            raise SystemExit("No se guardó ningún partido de NBA.")
+        print("Ajustando y validando el modelo…")
+        print(nba_report(nba_service.state(s, comp, get_thresholds(s), force=True)))
     return 0
 
 
@@ -169,7 +225,7 @@ def monthly_plan_text() -> str:
         p = monthly_plan(s, get_settings())
     fits = "dentro" if p["fits"] else "FUERA"
     return (f"Créditos estimados al mes: {p['total']} (cuotas {p['odds']}, resultados {p['scores']}, previas "
-            f"{p['prekickoff']}) · disponibles {p['available']} ({fits} del límite) · usados este mes "
+            f"{p['prekickoff']}, NBA {p.get('nba', 0)}) · disponibles {p['available']} ({fits} del límite) · usados este mes "
             f"{p['used_this_month']:.0f}")
 
 
@@ -224,6 +280,10 @@ def main(argv: list[str] | None = None) -> int:
     p.set_defaults(fn=cmd_tarea)
     p = sub.add_parser("programador", help="Mantiene el programador corriendo en esta terminal")
     p.set_defaults(fn=cmd_programador)
+    p = sub.add_parser("nba-historial", help="Descarga resultados NBA de balldontlie y valida el modelo")
+    p.add_argument("--temporadas", default="2022,2023,2024,2025",
+                   help="Años de inicio separados por coma (2024 = 2024-25)")
+    p.set_defaults(fn=cmd_nba_historial)
     a = ap.parse_args(argv)
     _init()
     return int(a.fn(a))

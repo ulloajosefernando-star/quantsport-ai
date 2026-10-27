@@ -194,7 +194,11 @@ def test_model_coverage_is_honest():
     assert cov["football"]["1x2"] is None and cov["football"]["correct_score"] is None
     assert "córners" in cov["football"]["corners_totals"]
     assert "vivo" in cov["football"]["next_goal"]
-    for sport in ("nba", "nfl", "mlb", "tennis"):
+    for m in ("moneyline", "spread", "totals", "team_totals"):
+        assert cov["nba"][m] is None
+    assert all(r and "Sin modelo" in r for k, r in cov["nba"].items()
+               if k not in ("moneyline", "spread", "totals", "team_totals"))
+    for sport in ("nfl", "mlb", "tennis"):
         assert all(reason and "Sin modelo" in reason for reason in cov[sport].values())
 
 
@@ -328,7 +332,8 @@ def test_registry_and_convert_endpoints(client):
     assert {s["key"] for s in reg["sports"]} == {"football", "nba", "nfl", "mlb", "tennis"}
     assert reg["formats"] == ["decimal", "american", "fractional", "percent"]
     nba = client.get("/api/markets/registry", params={"sport": "nba"}).json()["sports"][0]
-    assert all(not m["has_model"] for m in nba["markets"])
+    modeled = {m["key"] for m in nba["markets"] if m["has_model"]}
+    assert modeled == {"moneyline", "spread", "totals", "team_totals"}
     assert client.get("/api/markets/registry", params={"sport": "curling"}).status_code == 404
 
     r = client.get("/api/tools/convert", params={"value": "+150"}).json()

@@ -81,6 +81,8 @@ def snapshot_ranking(s: Session, timezone: str) -> dict:
     rows = build_ranking(s, th, RankingFilters(include_no_value=True), timezone)
     mv = {}
     for comp in s.scalars(select(Competition)):
+        if comp.sport.key != "football":
+            continue  # el ranking de pronósticos solo cubre fútbol
         st = football_service.state(s, comp, th)
         if st.model_version_id:
             mv[comp.key] = st.model_version_id

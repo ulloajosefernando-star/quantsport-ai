@@ -27,10 +27,12 @@ from app.providers.base import (
     ProviderNotConfigured,
 )
 from app.providers.http import ProviderHttpClient, QuotaPolicy
-from app.providers.normalize import COMPETITIONS, canonical_team_name
+from app.providers.normalize import COMPETITIONS, canonical_team_name, competition_sport
 
 SOURCE = "the-odds-api"
 MARKETS = {"h2h": "1x2", "totals": "totals", "spreads": "ah"}
+# Claves del registro de mercados por deporte (en EE. UU. h2h es ganador a dos vías y spreads el hándicap)
+SPORT_MARKETS = {"football": MARKETS, "nba": {"h2h": "moneyline", "totals": "totals", "spreads": "spread"}}
 
 
 def _credits(resp: httpx.Response) -> tuple[float, float | None]:
@@ -40,13 +42,15 @@ def _credits(resp: httpx.Response) -> tuple[float, float | None]:
 
 
 def parse_odds_response(data: list[dict], competition_key: str) -> list[NormalizedOdds]:
+    sport = competition_sport(competition_key)
+    markets = SPORT_MARKETS.get(sport, MARKETS)
     out: list[NormalizedOdds] = []
     for ev in data:
         kickoff = datetime.fromisoformat(ev["commence_time"].replace("Z", "+00:00"))
         home, away = ev["home_team"], ev["away_team"]
         for bm in ev.get("bookmakers", []):
             for mk in bm.get("markets", []):
-                market = MARKETS.get(mk["key"])
+                market = markets.get(mk["key"])
                 if not market:
                     continue
                 ts_raw = mk.get("last_update") or bm.get("last_update")
@@ -57,19 +61,20 @@ def parse_odds_response(data: list[dict], competition_key: str) -> list[Normaliz
                     name, price, point = o.get("name"), o.get("price"), o.get("point")
                     if not price or price <= 1:
                         continue
-                    if market == "1x2":
-                        sel = "home" if name == home else "away" if name == away else "draw" if name == "Draw" else None
+                    if market in ("1x2", "moneyline"):
+                        sel = ("home" if name == home else "away" if name == away
+                               else "draw" if name == "Draw" and market == "1x2" else None)
                         line = None
                     elif market == "totals":
                         sel = name.lower() if name in ("Over", "Under") else None
                         line = point
-                    else:  # spreads de fútbol = hándicap asiático
+                    else:  # spreads: hándicap asiático en fútbol, spread en NBA
                         sel = "home" if name == home else "away" if name == away else None
                         line = point
-                    if sel is None or (market != "1x2" and line is None):
+                    if sel is None or (market not in ("1x2", "moneyline") and line is None):
                         continue
                     out.append(NormalizedOdds(
-                        sport="football", competition_key=competition_key, kickoff_utc=kickoff,
+                        sport=sport, competition_key=competition_key, kickoff_utc=kickoff,
                         home=canonical_team_name(home), away=canonical_team_name(away),
                         bookmaker=bm.get("title", bm.get("key", "?")), market=market, selection=sel,
                         line=line, odds_decimal=float(price), captured_at=captured, source=SOURCE,
@@ -93,7 +98,8 @@ def parse_events(data: list[dict], competition_key: str) -> list[NormalizedEvent
         except (KeyError, TypeError, ValueError):
             continue
         out.append(NormalizedEvent(
-            sport="football", competition_key=competition_key, competition_name=meta.get("name", competition_key),
+            sport=competition_sport(competition_key), competition_key=competition_key,
+            competition_name=meta.get("name", competition_key),
             country=meta.get("country", ""), kickoff_utc=kickoff, home=canonical_team_name(home),
             away=canonical_team_name(away), status="scheduled", source=SOURCE, source_event_id=ev.get("id", ""),
         ))
@@ -115,7 +121,8 @@ def parse_scores(data: list[dict], competition_key: str) -> list[NormalizedEvent
         except (KeyError, TypeError, ValueError):
             continue
         out.append(NormalizedEvent(
-            sport="football", competition_key=competition_key, competition_name=meta.get("name", competition_key),
+            sport=competition_sport(competition_key), competition_key=competition_key,
+            competition_name=meta.get("name", competition_key),
             country=meta.get("country", ""), kickoff_utc=kickoff, home=canonical_team_name(home),
             away=canonical_team_name(away), status="finished", home_score=hs, away_score=as_, source=SOURCE,
             source_event_id=ev.get("id", ""),

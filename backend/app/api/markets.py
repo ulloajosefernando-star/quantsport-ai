@@ -63,6 +63,11 @@ def market_events(sport: str | None = None, competition: str | None = None, days
 
 def _event_model(db: Session, ev: Event, th):
     sport = event_ref(ev).sport
+    if sport == "nba":
+        from app.sports.nba.service import nba_service
+
+        em = nba_service.market_model(db, ev, th)
+        return em.model, em.reason, em.data_issues, em.calibration_score, em.sample_score
     if sport != "football":
         return None, no_model_reason(sport), [], 0.0, None
     em = football_service.market_model(db, ev, th)

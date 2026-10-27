@@ -21,6 +21,7 @@ from app.sports.football.data import average_odds, consensus_fair, finished, mat
 from app.sports.football.service import football_service
 
 SEL_1X2 = ("home", "draw", "away")
+SEL_2WAY = ("home", "away")
 WON_STATES = ("gana", "medio_gana")
 
 
@@ -32,7 +33,7 @@ def default_competition(s: Session) -> Competition | None:
     ).all()
     if not rows:
         return None
-    return max(rows, key=lambda r: (not r[0].is_synthetic, r[1]))[0]
+    return max(rows, key=lambda r: (not r[0].is_synthetic, r[0].sport.key == "football", r[1]))[0]
 
 
 def _round(x: float | None, nd: int = 4) -> float | None:
@@ -43,6 +44,13 @@ def _probs(d: dict | None, sels: tuple[str, ...]) -> list[float] | None:
     if not d or any(d.get(k) is None for k in sels):
         return None
     return [round(float(d[k]), 4) for k in sels]
+
+
+def _last_before_kickoff(fn, odds: pd.DataFrame, market: str, line: float | None) -> dict[int, dict[str, float]]:
+    """Cierre si lo hay; si no, la última cuota capturada antes del partido (la del programador)."""
+    if odds.empty:
+        return {}
+    return {**fn(odds, market, line, False), **fn(odds, market, line, True)}
 
 
 def _outcome(hg: int, ag: int) -> str:
@@ -79,7 +87,7 @@ def _predictions_by_event(s: Session, names: dict[int, tuple[str, str]]) -> dict
 
 def results(s: Session, th: ValueThresholds, tz: str, competition_key: str | None = None, team: str | None = None,
             date_from: date | None = None, date_to: date | None = None, page: int = 1, page_size: int = 50) -> dict:
-    comps = [{"key": c.key, "name": c.name, "is_synthetic": c.is_synthetic}
+    comps = [{"key": c.key, "name": c.name, "is_synthetic": c.is_synthetic, "sport": c.sport.key}
              for c in s.scalars(select(Competition).order_by(Competition.name))]
     comp = (s.scalar(select(Competition).where(Competition.key == competition_key)) if competition_key
             else default_competition(s))
@@ -96,26 +104,36 @@ def results(s: Session, th: ValueThresholds, tz: str, competition_key: str | Non
         df = df[df["kickoff"] >= pd.Timestamp(datetime.combine(date_from, time.min, zone))]
     if not df.empty and date_to:
         df = df[df["kickoff"] <= pd.Timestamp(datetime.combine(date_to, time.max, zone))]
-    base = {**empty, "competition": {"key": comp.key, "name": comp.name, "is_synthetic": comp.is_synthetic},
-            "teams": teams}
+    nba = comp.sport.key == "nba"
+    sels = SEL_2WAY if nba else SEL_1X2
+    base = {**empty, "competition": {"key": comp.key, "name": comp.name, "is_synthetic": comp.is_synthetic,
+                                     "sport": comp.sport.key}, "teams": teams, "selections": list(sels)}
     if df.empty:
         return base
     df = df.sort_values("kickoff", ascending=False)
     ids = df["event_id"].astype(int).tolist()
 
     odds = odds_frame(s, ids)
-    fair_1x2 = consensus_fair(odds, "1x2", None, True) if not odds.empty else {}
-    fair_ou = consensus_fair(odds, "totals", 2.5, True) if not odds.empty else {}
-    fair_bt = consensus_fair(odds, "btts", None, True) if not odds.empty else {}
-    avg_1x2 = average_odds(odds, "1x2", None, True) if not odds.empty else {}
-    oos = football_service.state(s, comp, th).oos
+    main = "moneyline" if nba else "1x2"
+    fair_1x2 = _last_before_kickoff(consensus_fair, odds, main, None)
+    avg_1x2 = _last_before_kickoff(average_odds, odds, main, None)
+    fair_ou = {} if nba else _last_before_kickoff(consensus_fair, odds, "totals", 2.5)
+    fair_bt = {} if nba else _last_before_kickoff(consensus_fair, odds, "btts", None)
+    if nba:
+        from app.sports.nba.service import nba_service
+
+        oos = {k: {"1x2": v["moneyline"], "mu_margin": v["mu_margin"], "mu_total": v["mu_total"]}
+               for k, v in nba_service.state(s, comp, th).oos.items()}
+    else:
+        oos = football_service.state(s, comp, th).oos
 
     hg, ag = df["home_goals"].astype(int), df["away_goals"].astype(int)
     goals = hg + ag
     summary: dict = {
         "n_matches": len(df), "home_win": float((hg > ag).mean()), "draw": float((hg == ag).mean()),
         "away_win": float((hg < ag).mean()), "avg_goals": float(goals.mean()),
-        "over_2_5": float((goals > 2.5).mean()), "btts": float(((hg > 0) & (ag > 0)).mean()),
+        "over_2_5": None if nba else float((goals > 2.5).mean()),
+        "btts": None if nba else float(((hg > 0) & (ag > 0)).mean()),
     }
     if team:
         is_home = df["home"] == team
@@ -125,7 +143,7 @@ def results(s: Session, th: ValueThresholds, tz: str, competition_key: str | Non
                            "lost": int((gf < ga).sum()), "goals_for": int(gf.sum()), "goals_against": int(ga.sum())}
 
     # Modelo (fuera de muestra) contra el mercado al cierre, en los partidos donde hay ambos
-    y = [SEL_1X2.index(_outcome(h, a)) for h, a in zip(hg, ag, strict=True)]
+    y = [sels.index(_outcome(h, a)) for h, a in zip(hg, ag, strict=True)]
     P, M, Y = [], [], []
     hits = 0
     n_model = 0
@@ -135,7 +153,7 @@ def results(s: Session, th: ValueThresholds, tz: str, competition_key: str | Non
             continue
         n_model += 1
         hits += int(int(np.argmax(pm)) == yi)
-        mk = _probs(fair_1x2.get(ev_id), SEL_1X2)
+        mk = _probs(fair_1x2.get(ev_id), sels)
         if mk is not None:
             P.append(pm)
             M.append(mk)
@@ -173,21 +191,25 @@ def results(s: Session, th: ValueThresholds, tz: str, competition_key: str | Non
             "home": r.home, "away": r.away, "home_score": h, "away_score": a,
             "ht": [ev.home_score_ht, ev.away_score_ht] if ev and ev.home_score_ht is not None else None,
             "outcome": _outcome(h, a), "total_goals": h + a, "btts": h > 0 and a > 0,
-            "market_1x2": _probs(fair_1x2.get(ev_id), SEL_1X2),
-            "closing_odds_1x2": _probs(avg_1x2.get(ev_id), SEL_1X2),
+            "market_1x2": _probs(fair_1x2.get(ev_id), sels),
+            "closing_odds_1x2": _probs(avg_1x2.get(ev_id), sels),
             "market_over25": _round((fair_ou.get(ev_id) or {}).get("over")),
             "market_btts": _round((fair_bt.get(ev_id) or {}).get("yes")),
             "model_1x2": [round(x, 4) for x in pm] if pm else None,
             "model_over25": _round(o.get("over25")), "model_btts": _round(o.get("btts")),
-            "model_pick": SEL_1X2[int(np.argmax(pm))] if pm else None,
-            "model_hit": (SEL_1X2[int(np.argmax(pm))] == _outcome(h, a)) if pm else None,
+            "model_pick": sels[int(np.argmax(pm))] if pm else None,
+            "model_hit": (sels[int(np.argmax(pm))] == _outcome(h, a)) if pm else None,
+            "model_margin": _round(o.get("mu_margin"), 1), "model_total": _round(o.get("mu_total"), 1),
             "predictions": preds.get(ev_id, []),
         })
     return {**base, "items": items, "total": len(df), "page": page, "summary": summary,
             "is_synthetic": comp.is_synthetic,
             "notes": [
-                "Mercado: probabilidad sin margen de las cuotas de cierre (media de operadores).",
+                "Mercado: probabilidad sin margen de las cuotas de cierre (media de operadores); si no hay cierre, "
+                "la última cuota guardada antes del partido.",
                 "Modelo: probabilidad fuera de muestra del walk-forward; cada partido se predijo solo con "
                 "partidos anteriores. Los primeros partidos de la historia no tienen predicción.",
-                "Pronósticos: los que registró el programador antes del partido, con su liquidación y CLV.",
+                *(["NBA: no hay cuotas históricas gratuitas; el mercado aparece solo en partidos cuyas cuotas "
+                   "guardó el programador."] if nba else
+                  ["Pronósticos: los que registró el programador antes del partido, con su liquidación y CLV."]),
             ]}
