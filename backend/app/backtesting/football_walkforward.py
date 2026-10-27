@@ -30,9 +30,9 @@ from app.calibration.metrics import (
     reliability_curve,
     roc_auc,
 )
+from app.sports.football import adjust
 from app.sports.football import dixon_coles as dc
 from app.sports.football.data import average_odds, consensus_fair
-from app.sports.football.scores import probs_1x2, probs_btts, probs_totals
 
 
 @dataclass
@@ -44,6 +44,8 @@ class WalkForwardConfig:
     max_odds: float = 6.0
     bootstrap: int = 400
     seed: int = 11
+    draw_adjust: bool = False
+    market_blend: bool = False
 
 
 class LeakageError(AssertionError):
@@ -125,6 +127,7 @@ def run(matches: pd.DataFrame, odds: pd.DataFrame, model_cfg: dc.DixonColesConfi
     cfg = cfg or WalkForwardConfig()
     model_cfg = model_cfg or dc.DixonColesConfig()
     df = matches.dropna(subset=["home_goals", "away_goals"]).sort_values("kickoff").reset_index(drop=True)
+    df["knockout"] = dc.flag_two_leg(df) if model_cfg.knockout else False
     n = len(df)
     start_idx = max(cfg.min_train, n // 3)
     if n <= start_idx + 20:
@@ -152,9 +155,10 @@ def run(matches: pd.DataFrame, odds: pd.DataFrame, model_cfg: dc.DixonColesConfi
 
     ref_counts = {"pre_cierre": 0, "cierre": 0, "sin_cuotas": 0}
 
-    rows, bets = [], []
+    rows, offers = [], []
     skipped = 0
     refits = 0
+    chunk = 0
     chunk_start = test_start
     while chunk_start <= end:
         chunk_end = chunk_start + pd.Timedelta(days=cfg.refit_days)
@@ -174,10 +178,8 @@ def run(matches: pd.DataFrame, odds: pd.DataFrame, model_cfg: dc.DixonColesConfi
                         and model.team_sample_ok(m["home"]) and model.team_sample_ok(m["away"])):
                     skipped += 1
                     continue
-                sm = model.predict(m["home"], m["away"])
-                p = probs_1x2(sm)
-                pou = probs_totals(sm, 2.5)
-                pbt = probs_btts(sm)
+                sm = model.predict(m["home"], m["away"], bool(m["knockout"]))
+                split = adjust.class_split(sm)
                 hg, ag = int(m["home_goals"]), int(m["away_goals"])
                 y1x2 = 0 if hg > ag else 1 if hg == ag else 2
                 yover = int(hg + ag > 2)
@@ -186,35 +188,33 @@ def run(matches: pd.DataFrame, odds: pd.DataFrame, model_cfg: dc.DixonColesConfi
                 m1 = pick(pre_1x2, close_1x2, ev_id)
                 ref_counts["pre_cierre" if ev_id in pre_1x2 else "cierre" if ev_id in close_1x2 else "sin_cuotas"] += 1
                 rows.append({
-                    "event_id": ev_id, "kickoff": m["kickoff"],
-                    "p_home": p["home"], "p_draw": p["draw"], "p_away": p["away"], "p_over": pou["over"],
+                    "event_id": ev_id, "kickoff": m["kickoff"], "chunk": chunk,
+                    **{f"c{k}_{i}": float(split[k][i]) for k in ("p", "over", "btts") for i in range(3)},
                     "b_home": base_1x2[0], "b_draw": base_1x2[1], "b_away": base_1x2[2], "b_over": base_over,
                     "m_home": m1.get("home"), "m_draw": m1.get("draw"), "m_away": m1.get("away"),
                     "m_over": pick(pre_ou, close_ou, ev_id).get("over"),
-                    "p_btts": pbt["yes"], "b_btts": base_btts, "m_btts": pick(pre_bt, close_bt, ev_id).get("yes"),
+                    "b_btts": base_btts, "m_btts": pick(pre_bt, close_bt, ev_id).get("yes"),
                     "y1x2": y1x2, "yover": yover, "ybtts": ybtts,
                 })
                 won_1x2 = {"home": y1x2 == 0, "draw": y1x2 == 1, "away": y1x2 == 2}
-                candidates = [("1x2", s, p[s], avg_pre_1x2, avg_close_1x2, close_1x2, won_1x2[s])
+                candidates = [("1x2", s, avg_pre_1x2, avg_close_1x2, close_1x2, won_1x2[s])
                               for s in ("home", "draw", "away")]
-                candidates += [("totals_2.5", s, pou[s], avg_pre_ou, avg_close_ou, close_ou, (s == "over") == bool(yover))
+                candidates += [("totals_2.5", s, avg_pre_ou, avg_close_ou, close_ou, (s == "over") == bool(yover))
                                for s in ("over", "under")]
-                candidates += [("btts", s, pbt[s], avg_pre_bt, avg_close_bt, close_bt, (s == "yes") == bool(ybtts))
+                candidates += [("btts", s, avg_pre_bt, avg_close_bt, close_bt, (s == "yes") == bool(ybtts))
                                for s in ("yes", "no")]
-                for market, sel, pm, avg_pre, avg_close, fair_close, won in candidates:
+                for market, sel, avg_pre, avg_close, fair_close, won in candidates:
                     d = avg_pre.get(ev_id, {}).get(sel)
                     taken = "pre_cierre"
                     if d is None:
                         d, taken = avg_close.get(ev_id, {}).get(sel), "cierre"
                     if d is None or not (cfg.min_odds <= d <= cfg.max_odds):
                         continue
-                    if pm * d - 1 >= cfg.min_ev:
-                        p_close = fair_close.get(ev_id, {}).get(sel)
-                        # CLV: cuota tomada vs cuota justa de cierre (no aplica si se apostó al cierre)
-                        clv = (d * p_close - 1) if (p_close and taken == "pre_cierre") else None
-                        bets.append({"event_id": ev_id, "market": market, "selection": sel, "odds": d, "p": pm,
-                                     "profit": d - 1 if won else -1.0, "clv": clv, "taken": taken})
+                    offers.append({"row": len(rows) - 1, "event_id": ev_id, "market": market, "selection": sel,
+                                   "odds": d, "taken": taken, "p_close": fair_close.get(ev_id, {}).get(sel),
+                                   "won": won})
         chunk_start = chunk_end
+        chunk += 1
 
     res = pd.DataFrame(rows)
     out: dict = {
@@ -229,6 +229,35 @@ def run(matches: pd.DataFrame, odds: pd.DataFrame, model_cfg: dc.DixonColesConfi
         out["reason"] = "Ningún partido evaluable (equipos sin muestra suficiente)."
         return out
 
+    # Ajustes (empates y mercado): para cada bloque se estiman SOLO con predicciones de bloques anteriores
+    raw = res[["cp_0", "cp_1", "cp_2"]].to_numpy()
+    raw = raw / raw.sum(axis=1, keepdims=True)
+    mkt = res[["m_home", "m_draw", "m_away"]].to_numpy(dtype=float)
+    yy = res["y1x2"].to_numpy()
+    final = raw.copy()
+    if cfg.draw_adjust or cfg.market_blend:
+        for c in sorted(res["chunk"].unique()):
+            prev, cur = (res["chunk"] < c).to_numpy(), (res["chunk"] == c).to_numpy()
+            a = adjust.fit(raw[prev], mkt[prev], yy[prev], cfg.draw_adjust, cfg.market_blend)
+            final[cur] = adjust.class_probs(raw[cur], a, mkt[cur])
+        out["adjustment"] = adjust.fit(raw, mkt, yy, cfg.draw_adjust, cfg.market_blend).to_dict()
+    res["p_home"], res["p_draw"], res["p_away"] = final[:, 0], final[:, 1], final[:, 2]
+    res["p_over"] = adjust.derived(raw, final, res[["cover_0", "cover_1", "cover_2"]].to_numpy())
+    res["p_btts"] = adjust.derived(raw, final, res[["cbtts_0", "cbtts_1", "cbtts_2"]].to_numpy())
+
+    bets = []
+    for o in offers:
+        r = res.iloc[o["row"]]
+        pm = {("1x2", "home"): r.p_home, ("1x2", "draw"): r.p_draw, ("1x2", "away"): r.p_away,
+              ("totals_2.5", "over"): r.p_over, ("totals_2.5", "under"): 1 - r.p_over,
+              ("btts", "yes"): r.p_btts, ("btts", "no"): 1 - r.p_btts}[(o["market"], o["selection"])]
+        d = o["odds"]
+        if pm * d - 1 >= cfg.min_ev:
+            # CLV: cuota tomada vs cuota justa de cierre (no aplica si se apostó al cierre)
+            clv = (d * o["p_close"] - 1) if (o["p_close"] and o["taken"] == "pre_cierre") else None
+            bets.append({"event_id": o["event_id"], "market": o["market"], "selection": o["selection"], "odds": d,
+                         "p": pm, "profit": d - 1 if o["won"] else -1.0, "clv": clv, "taken": o["taken"]})
+
     P = res[["p_home", "p_draw", "p_away"]].to_numpy()
     B = res[["b_home", "b_draw", "b_away"]].to_numpy()
     y = res["y1x2"].to_numpy()
@@ -240,6 +269,8 @@ def run(matches: pd.DataFrame, odds: pd.DataFrame, model_cfg: dc.DixonColesConfi
         "reliability": [b.__dict__ for b in reliability_curve(P[:, 0], y == 0)],
         "reliability_note": "Curva de calibración de la probabilidad de victoria local.",
     }
+    if cfg.draw_adjust or cfg.market_blend:
+        out["1x2"]["model_raw"] = {"brier": brier_score(raw, y), "log_loss": log_loss(raw, y)}
     mk = res.dropna(subset=["m_home", "m_draw", "m_away"])
     if len(mk) >= 30:
         Pm = mk[["p_home", "p_draw", "p_away"]].to_numpy()

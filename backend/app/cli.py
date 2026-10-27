@@ -6,6 +6,7 @@ Ejemplos (desde backend/):
     python -m app.cli equipos --competicion mex_liga_mx
     python -m app.cli fusionar --de 41 --en 7
     python -m app.cli validar --competicion mex_liga_mx
+    python -m app.cli experimentar-futbol --competicion mex_liga_mx   # compara variantes del modelo
     python -m app.cli sincronizar --proveedor openfootball --competicion esp_la_liga --tipo results --temporadas 2024,2025
     python -m app.cli importar ~/Descargas/clubelo_2026-10-23.csv     # ratings Club Elo descargados a mano
     python -m app.cli tarea diaria        # ejecuta ahora una tarea del programador (diaria | cuotas | previa)
@@ -156,6 +157,37 @@ def cmd_validar(a: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_experimentar_futbol(a: argparse.Namespace) -> int:
+    import pandas as pd
+
+    from app.backtesting import football_experiments as fx
+    from app.sports.football.data import finished, matches_frame, odds_frame
+
+    with session_scope() as s:
+        comp = s.scalar(select(Competition).where(Competition.key == a.competicion))
+        if comp is None or comp.sport.key != "football":
+            raise SystemExit(f"No hay datos de fútbol de {a.competicion}.")
+        df = finished(matches_frame(s, comp.id))
+        if a.anios:
+            df = df[df["kickoff"] >= df["kickoff"].max() - pd.Timedelta(days=365 * a.anios)]
+        odds = odds_frame(s, df["event_id"].astype(int).tolist())
+        th = get_thresholds(s)
+        name = comp.name
+    variants = [v for v in fx.VARIANTS if not a.variantes or v.key in a.variantes.split(",")]
+    print(f"{len(df)} partidos de {name}; {len(variants)} variantes (cada una tarda uno o dos minutos)…")
+    rows = fx.run(df, odds, variants, base_model={"min_team_matches": th.min_team_matches},
+                  base_wf={"min_ev": th.min_ev, "min_odds": th.min_odds, "max_odds": th.max_odds},
+                  progress=lambda label: print(f"  · {label}", flush=True))
+    md = fx.markdown(rows, name, len(df))
+    out_dir = get_settings().reports_dir
+    out_dir.mkdir(parents=True, exist_ok=True)
+    path = out_dir / f"variantes_{a.competicion}_{datetime.now(UTC):%Y%m%d_%H%M}.md"
+    path.write_text(md, encoding="utf-8")
+    print(md)
+    print(f"Informe guardado en {path}")
+    return 0
+
+
 def nba_report(st) -> str:
     """Resumen de texto del modelo NBA y su validación fuera de muestra."""
     if st.model is None:
@@ -275,6 +307,11 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("validar", help="Ajusta el modelo, valida (walk-forward) y escribe un informe")
     p.add_argument("--competicion", required=True)
     p.set_defaults(fn=cmd_validar)
+    p = sub.add_parser("experimentar-futbol", help="Compara variantes del modelo de fútbol con walk-forward")
+    p.add_argument("--competicion", required=True)
+    p.add_argument("--anios", type=int, default=0, help="Solo los últimos N años (0 = todo el historial)")
+    p.add_argument("--variantes", help="Claves separadas por coma (por defecto, todas)")
+    p.set_defaults(fn=cmd_experimentar_futbol)
     p = sub.add_parser("tarea", help="Ejecuta ahora una tarea del programador")
     p.add_argument("nombre", choices=["diaria", "cuotas", "previa"])
     p.set_defaults(fn=cmd_tarea)
