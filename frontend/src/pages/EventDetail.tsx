@@ -3,6 +3,7 @@ import { useApi } from '../hooks/useApi'
 import type { Assessment, Category } from '../types/api'
 import { Card, CategoryBadge, Empty, ErrorBox, Loading, ModelBadge, SyntheticTag } from '../components/ui'
 import { ManualOddsCard } from '../components/ManualOdds'
+import { SimpleStats } from '../components/SimpleStats'
 import { OddsHistoryChart, ProbBar, ScoreHeatmap } from '../charts/charts'
 import { MARKET_LABEL, SELECTION_LABEL, localTime, num, pct, signedPct } from '../lib/format'
 
@@ -70,6 +71,13 @@ export default function EventDetail() {
         </div>
       )}
 
+      <SimpleStats eventId={data.event_id} />
+
+      <details className="group rounded-xl border border-ink-700/70">
+        <summary className="cursor-pointer select-none px-4 py-3 text-sm font-medium text-ink-200 hover:text-ink-100">
+          Análisis técnico del modelo: probabilidades Dixon-Coles, valor frente a cuotas y márgenes
+        </summary>
+        <div className="space-y-6 p-4 pt-2">
       {!p ? <Empty>Sin probabilidades: datos insuficientes para este partido.</Empty> : (
         <>
           <div className="grid gap-6 lg:grid-cols-3">
@@ -238,6 +246,8 @@ export default function EventDetail() {
           <p className="mt-2 text-xs text-ink-400">Eliminar el margen no revela la probabilidad verdadera; cada método supone un reparto distinto.</p>
         </Card>
       </div>
+        </div>
+      </details>
     </div>
   )
 }
