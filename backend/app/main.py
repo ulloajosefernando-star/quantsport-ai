@@ -4,14 +4,14 @@ from __future__ import annotations
 
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
 
 from app.api.markets import router as markets_router
 from app.api.routes import router
 from app.api.scheduler import router as scheduler_router
-from app.core.config import get_settings
+from app.core.config import REPO_DIR, get_settings
 from app.core.logging import configure_logging, get_logger
 from app.db.migrate import upgrade_head
 from app.db.session import session_scope
@@ -66,7 +66,28 @@ def create_app() -> FastAPI:
     app.include_router(router)
     app.include_router(markets_router)
     app.include_router(scheduler_router)
+    _serve_frontend(app)
     return app
+
+
+FRONTEND_DIST = REPO_DIR / "frontend" / "dist"
+
+
+def _serve_frontend(app: FastAPI) -> None:
+    """Si existe el build del frontend, el panel se sirve en el mismo puerto que la API (sin Node ni Vite)."""
+    index = FRONTEND_DIST / "index.html"
+    if not index.exists():
+        return
+    root = FRONTEND_DIST.resolve()
+
+    @app.get("/{path:path}", include_in_schema=False)
+    def spa(path: str) -> FileResponse:
+        if path.startswith("api/"):
+            raise HTTPException(404, "Ruta no encontrada")
+        f = (root / path).resolve()
+        if path and f.is_file() and f.is_relative_to(root):
+            return FileResponse(f)
+        return FileResponse(index)  # rutas del panel (React Router)
 
 
 app = create_app()

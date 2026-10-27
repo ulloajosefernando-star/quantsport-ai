@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import secrets
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, File, Header, HTTPException, Query, UploadFile
@@ -34,7 +34,7 @@ from app.providers.base import ProviderError
 from app.providers.normalize import COMPETITIONS
 from app.providers.registry import SEASON_AWARE, all_providers, get_provider
 from app.ranking.ranker import RankingFilters, analyze_upcoming, build_ranking, flatten, upcoming_events
-from app.reporting import budget, predictions
+from app.reporting import budget, predictions, results
 from app.sports.football.service import football_service
 from app.telegram.notifier import TelegramNotifier
 from app.value_engine.engine import CATEGORIES
@@ -219,6 +219,15 @@ def predictions_list(limit: int = Query(200, le=1000), db: Session = Depends(get
              "market": p.market, "line": p.line, "selection": p.selection, "p_model": p.p_model, "odds": p.odds,
              "bookmaker": p.bookmaker, "ev": p.ev, "edge": p.edge, "category": p.category,
              "is_synthetic": p.is_synthetic} for p in rows]
+
+
+# ---------------------------------------------------------------- resultados
+@router.get("/results", tags=["resultados"])
+def past_results(competition: str | None = None, team: str | None = None, date_from: date | None = None,
+                 date_to: date | None = None, page: int = Query(1, ge=1), page_size: int = Query(50, ge=10, le=200),
+                 db: Session = Depends(get_db), settings: Settings = Depends(get_settings)) -> dict:
+    return results.results(db, get_thresholds(db), settings.timezone, competition, team, date_from, date_to, page,
+                           page_size)
 
 
 # ---------------------------------------------------------------- fuentes

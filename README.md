@@ -108,9 +108,21 @@ Hay 70 mercados registrados en fútbol, NBA, NFL, MLB y tenis. Hoy solo fútbol 
 
 **Captura manual.** La plataforma no se conecta a ninguna casa de apuestas. Para evaluar una cuota que ves en cualquier casa o fuente, abre el partido en **Cartelera → detalle** y usa **Evaluar una cuota de cualquier casa o fuente**. La cuota queda guardada con origen `manual` y no entra en el consenso del mercado. Si la evidencia es débil, la respuesta sigue siendo NO BET.
 
-## Programador automático
+## Uso diario en tu Mac (recomendado)
 
-Viene apagado. Para encenderlo, en `.env`:
+Una sola vez, desde la carpeta del proyecto:
+
+```bash
+./scripts/instalar_mac.sh
+```
+
+Con eso, el panel y el programador automático corren juntos en **http://localhost:8000** y arrancan solos cada vez que inicias sesión. Si algo falla, se reinician. Mientras la Mac esté conectada a la corriente no se duerme, para no perder tareas. El panel solo escucha en tu Mac y no queda abierto a internet. Necesita Python 3.12+ y Node.js (nodejs.org, versión LTS) solo para preparar el panel. Para quitarlo: `./scripts/desinstalar_mac.sh`. Registro: `data/logs/quantsport.log`.
+
+Para actualizar a una versión nueva: `git pull` y vuelve a correr `./scripts/instalar_mac.sh`.
+
+### Programador automático
+
+Se activa en `.env`:
 
 ```bash
 DATA_MODE=real
@@ -119,17 +131,19 @@ THE_ODDS_API_KEY=tu_clave_gratuita   # sin clave solo hace los pasos gratuitos
 THE_ODDS_API_REGIONS=eu              # 1 región = 2 créditos por consulta de cuotas
 ```
 
-Funciona mientras el backend esté encendido, o en una terminal aparte con `python -m app.cli programador`. Tareas (hora local, configurables con `SCHEDULER_*`):
+Tareas (hora local, configurables con `SCHEDULER_*`):
 
-- **Diaria (07:30):** descarga el CSV de football-data.co.uk, actualiza calendario y resultados, liquida pronósticos con su CLV y guarda la foto del ranking. Si el equipo estuvo apagado, se pone al día al arrancar.
+- **Diaria (07:30):** descarga el CSV de football-data.co.uk, actualiza calendario y resultados, liquida pronósticos con su CLV y guarda la foto del ranking. Si la Mac estuvo apagada, se pone al día al arrancar.
 - **Cuotas (09:00 y 17:00):** consulta 1X2 y totales.
 - **Previa (cada 15 min):** 45 minutos antes de cada partido toma una última foto de cuotas y registra el pronóstico.
 
-Cada tarea se ejecuta una sola vez por periodo, aunque reinicies. Antes de cada consulta de pago revisa el presupuesto mensual de créditos y deja una reserva (`SCHEDULER_CREDIT_RESERVE`). Si no alcanza, omite esa consulta y sigue con los pasos gratuitos. El plan por defecto usa unos 282 de los 500 créditos gratis. Estado, plan de créditos y botones para ejecutar a mano: **Fuentes de datos → Programador automático**, o `python -m app.cli tarea diaria|cuotas|previa`.
-
-Para que corra sin depender de tu equipo, instálalo en un servidor Linux con `scripts/instalar_servidor.sh`: [docs/SERVIDOR.md](docs/SERVIDOR.md).
+Cada tarea se ejecuta una sola vez por periodo, aunque reinicies. Antes de cada consulta de pago revisa el presupuesto mensual de créditos y deja una reserva (`SCHEDULER_CREDIT_RESERVE`). Si no alcanza, omite esa consulta y sigue con los pasos gratuitos. Estado, plan de créditos y botones para ejecutar a mano: **Fuentes de datos → Programador automático**, o `python -m app.cli tarea diaria|cuotas|previa`. Para un servidor Linux existe `scripts/instalar_servidor.sh` ([docs/SERVIDOR.md](docs/SERVIDOR.md)), opcional.
 
 El programador nunca apuesta, no deposita y no inicia sesión en ninguna casa.
+
+### Resultados pasados
+
+En **Resultados** ves cada partido jugado con su marcador, la probabilidad del mercado al cierre (sin margen), la del modelo antes del partido y si acertó, y los pronósticos que registró el programador con su liquidación y CLV. Filtra por competición, equipo y fechas. El resumen compara el modelo con el mercado en el periodo elegido. La probabilidad del modelo es fuera de muestra: cada partido se predijo solo con partidos anteriores.
 
 ## Telegram
 
@@ -137,12 +151,12 @@ Crea un bot con @BotFather y define `TELEGRAM_BOT_TOKEN` y `TELEGRAM_ALLOWED_CHA
 
 ## Pantallas
 
-Inicio, Cartelera, Oportunidades, Detalle de evento, Rendimiento y validación, Fuentes de datos, Configuración (umbrales, competiciones, presupuesto, Telegram, token) y Herramientas (calculadora de cuotas, margen, EV y Kelly).
+Inicio, Cartelera, Oportunidades, Detalle de evento, Resultados, Rendimiento y validación, Fuentes de datos, Configuración (umbrales, competiciones, presupuesto, Telegram, token) y Herramientas (calculadora de cuotas, margen, EV y Kelly).
 
 ## Pruebas
 
 ```bash
-./scripts/test.sh      # ruff + pytest (222 pruebas) + build del frontend
+./scripts/test.sh      # ruff + pytest (226 pruebas) + build del frontend
 ```
 
 Ninguna prueba usa APIs reales ni consume cuotas: todo el HTTP se simula con `httpx.MockTransport`.

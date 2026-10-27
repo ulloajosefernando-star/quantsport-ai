@@ -6,6 +6,7 @@ const NAV = [
   { to: '/', label: 'Inicio', icon: 'M3 11l9-7 9 7v9a1 1 0 01-1 1h-5v-6H9v6H4a1 1 0 01-1-1z' },
   { to: '/cartelera', label: 'Cartelera', icon: 'M4 5h16M4 12h16M4 19h10' },
   { to: '/oportunidades', label: 'Oportunidades', icon: 'M4 18l5-6 4 3 7-9' },
+  { to: '/resultados', label: 'Resultados', icon: 'M9 5h10M9 12h10M9 19h10M4 5l1 1 2-2M4 12l1 1 2-2M4 19l1 1 2-2' },
   { to: '/rendimiento', label: 'Rendimiento', icon: 'M5 20V10M12 20V4M19 20v-7' },
   { to: '/fuentes', label: 'Fuentes', icon: 'M4 7c0-1.7 3.6-3 8-3s8 1.3 8 3-3.6 3-8 3-8-1.3-8-3zm0 0v10c0 1.7 3.6 3 8 3s8-1.3 8-3V7' },
   { to: '/mercados', label: 'Cuotas y mercados', icon: 'M4 6h16M4 12h10M4 18h6m10-4l-3 3-2-2' },
