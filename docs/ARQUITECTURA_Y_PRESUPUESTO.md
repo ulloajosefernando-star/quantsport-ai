@@ -111,7 +111,7 @@ Completo y probado:
 - Fuentes gratuitas adicionales: openfootball (resultados de 6 ligas europeas, dominio público) y ratings de Club Elo como referencia externa.
 - Módulo universal de cuotas y mercados ([CUOTAS_Y_MERCADOS.md](CUOTAS_Y_MERCADOS.md)): cuatro formatos de cuota, 70 mercados en 5 deportes con reglas de liquidación, estructura normalizada con identificadores estables, margen con método configurable, EV por estados, pantalla "Cuotas y mercados" y calculadora. El modelo de fútbol cubre 10 mercados; NBA, NFL, MLB y tenis aún no tienen modelo.
 - Captura manual de cuotas de cualquier fuente, con evaluación inmediata; no entra en el consenso del mercado.
-- 222 pruebas automáticas, ninguna usa APIs reales.
+- 226 pruebas automáticas, ninguna usa APIs reales.
 
 Pendiente o incompleto:
 - Fútbol queda como parcial. Primera validación real de Liga MX (23-oct-2026, ver sección 8): 1X2 bloqueado y Over/Under y ambos anotan experimentales. Hoy el modelo no encuentra ventaja y la plataforma recomienda NO BET.

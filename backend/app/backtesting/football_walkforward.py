@@ -252,6 +252,12 @@ def run(matches: pd.DataFrame, odds: pd.DataFrame, model_cfg: dc.DixonColesConfi
     out["totals_2.5"] = _binary_section(res, "p_over", "b_over", "m_over", "yover", cfg)
     out["btts"] = _binary_section(res, "p_btts", "b_btts", "m_btts", "ybtts", cfg)
 
+    # Probabilidades fuera de muestra por partido (para la pantalla de resultados). La clave "_oos" no se
+    # guarda ni se publica: el servicio la retira antes de persistir el walk-forward.
+    out["_oos"] = {int(r.event_id): {"1x2": [float(r.p_home), float(r.p_draw), float(r.p_away)],
+                                     "over25": float(r.p_over), "btts": float(r.p_btts)}
+                   for r in res.itertuples()}
+
     synthetic_odds = bool(odds["is_synthetic"].any()) if not odds.empty else False
     out["odds_kind"] = "none" if odds.empty else ("sintetica" if synthetic_odds else "real")
     out["betting"] = betting_summary(pd.DataFrame(bets), cfg.bootstrap, cfg.seed) if bets else {"n_bets": 0}

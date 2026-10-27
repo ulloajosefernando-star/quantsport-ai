@@ -67,6 +67,7 @@ class CompetitionState:
     gate: quality_gate.GateResult | None = None
     model_version_id: int | None = None
     last_result_at: datetime | None = None
+    oos: dict = field(default_factory=dict)  # {event_id: probabilidades fuera de muestra del walk-forward}
 
     @property
     def status(self) -> str:
@@ -141,6 +142,8 @@ class FootballService:
         except Exception as exc:  # el análisis sigue disponible, pero sin validación
             log.exception("Walk-forward falló para %s", comp.key)
             st.walkforward = {"status": "error", "reason": str(exc)}
+        if isinstance(st.walkforward, dict):
+            st.oos = st.walkforward.pop("_oos", {})
         st.gate = quality_gate.evaluate(st.walkforward, th)
         st.model_version_id = self._persist_model(s, st)
         return st
