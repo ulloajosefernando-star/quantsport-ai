@@ -23,6 +23,7 @@ from app.markets.quotes import selection_label
 from app.probability.margin import compare_methods
 from app.probability.settlement import binary_distribution
 from app.providers import clubelo
+from app.sports.football import adjust
 from app.sports.football import dixon_coles as dc
 from app.sports.football.data import consensus_fair, finished, matches_frame, odds_frame
 from app.sports.football.scores import (
@@ -40,6 +41,15 @@ log = get_logger(__name__)
 
 N_SAMPLES = 300
 MAX_HISTORY_DAYS = 4 * 365
+
+# Mejoras activas por competición, elegidas con el walk-forward contra el cierre (``python -m app.cli
+# experimentar-futbol``). ``model``: opciones de DixonColesConfig; ``wf``: ajustes posteriores.
+COMPETITION_PROFILES: dict[str, dict] = {}
+
+
+def profile(competition_key: str) -> dict:
+    p = COMPETITION_PROFILES.get(competition_key, {})
+    return {"model": dict(p.get("model", {})), "wf": dict(p.get("wf", {}))}
 
 SELECTION_LABELS = {
     ("1x2", "home"): "Local", ("1x2", "draw"): "Empate", ("1x2", "away"): "Visitante",
@@ -68,6 +78,7 @@ class CompetitionState:
     model_version_id: int | None = None
     last_result_at: datetime | None = None
     oos: dict = field(default_factory=dict)  # {event_id: probabilidades fuera de muestra del walk-forward}
+    adjust: adjust.Adjustment = adjust.IDENTITY
 
     @property
     def status(self) -> str:
@@ -129,7 +140,8 @@ class FootballService:
             return st
         df = df[df["kickoff"] >= now - pd.Timedelta(days=MAX_HISTORY_DAYS)]
         st.last_result_at = df["kickoff"].max().to_pydatetime() if not df.empty else None
-        cfg = dc.DixonColesConfig(min_team_matches=th.min_team_matches)
+        prof = profile(comp.key)
+        cfg = dc.DixonColesConfig(min_team_matches=th.min_team_matches, **prof["model"])
         try:
             st.model = dc.fit(df, now, cfg, competition=comp.key)
         except dc.InsufficientDataError as exc:
@@ -138,12 +150,16 @@ class FootballService:
         odds = odds_frame(s, df["event_id"].astype(int).tolist())
         try:
             st.walkforward = wf.run(df, odds, cfg, wf.WalkForwardConfig(min_ev=th.min_ev, min_odds=th.min_odds,
-                                                                        max_odds=th.max_odds))
+                                                                        max_odds=th.max_odds, **prof["wf"]))
         except Exception as exc:  # el análisis sigue disponible, pero sin validación
             log.exception("Walk-forward falló para %s", comp.key)
             st.walkforward = {"status": "error", "reason": str(exc)}
         if isinstance(st.walkforward, dict):
             st.oos = st.walkforward.pop("_oos", {})
+            a = st.walkforward.get("adjustment")
+            if a:
+                st.adjust = adjust.Adjustment(**{k: a[k] for k in ("draw_delta", "model_weight", "market_weight",
+                                                                   "n_draw", "n_blend")})
         st.gate = quality_gate.evaluate(st.walkforward, th)
         st.model_version_id = self._persist_model(s, st)
         return st
@@ -222,9 +238,10 @@ class FootballService:
             return out
 
         m = st.model
-        sm = m.predict(home, away)
+        sm, sampled = self._matrices(s, st, ev, live)
         out["probabilities"] = summary(sm)
-        sampled = list(m.sample_predictions(home, away, lambda x: x, n=N_SAMPLES))
+        if st.adjust != adjust.IDENTITY:
+            out["model"]["adjustment"] = st.adjust.to_dict()
         p_samples = {
             ("1x2", "home"): np.array([probs_1x2(x)["home"] for x in sampled]),
             ("1x2", "draw"): np.array([probs_1x2(x)["draw"] for x in sampled]),
@@ -264,6 +281,23 @@ class FootballService:
         cats = [a["category"] for a in assessments if a["n_offers"]]
         out["summary_category"] = min(cats, key=CATEGORY_ORDER.index) if cats else "datos_insuficientes"
         return out
+
+    @staticmethod
+    def _matrices(s: Session, st: CompetitionState, ev: Event,
+                  live: pd.DataFrame | None) -> tuple[ScoreMatrix, list[ScoreMatrix]]:
+        """Matriz del partido y muestras, con eliminatoria y ajustes (empates, mercado) si están activos."""
+        m = st.model
+        assert m is not None
+        home, away = ev.home_team.name, ev.away_team.name
+        ko = m.config.knockout and _is_two_leg(s, ev)
+        m3 = None
+        if st.adjust.blends and live is not None and not live.empty:
+            f = next(iter(consensus_fair(live, "1x2", None, False).values()), None)
+            m3 = np.array([f["home"], f["draw"], f["away"]]) if f else None
+        sm = adjust.adjust_matrix(m.predict(home, away, ko), st.adjust, m3)
+        sampled = [adjust.adjust_matrix(x, st.adjust, m3)
+                   for x in m.sample_predictions(home, away, lambda x: x, n=N_SAMPLES, knockout=ko)]
+        return sm, sampled
 
     @staticmethod
     def _selections(sm: ScoreMatrix, sampled: list[ScoreMatrix], p_samples: dict, live: pd.DataFrame,
@@ -356,13 +390,15 @@ class FootballService:
         if st.model is None or _blocking(issues):
             em.reason = "; ".join(issues) or "Modelo no disponible"
             return em
-        key = (ev.id, st.data_fp)
+        live = None
+        if st.adjust.blends:  # la combinación depende de las cuotas actuales
+            odds = odds_frame(s, [ev.id])
+            live = odds[~odds["is_closing"]] if not odds.empty else odds
+        key = (ev.id, st.data_fp, None if live is None else (len(live), str(live["captured_at"].max())))
         with self._lock:
             cached = self._event_models.get(key)
         if cached is None:
-            m = st.model
-            cached = FootballMatrixModel(m.predict(home, away), list(m.sample_predictions(home, away, lambda x: x,
-                                                                                          n=N_SAMPLES)), st.gate)
+            cached = FootballMatrixModel(*self._matrices(s, st, ev, live), st.gate)
             with self._lock:
                 if len(self._event_models) > 500:
                     self._event_models.clear()
@@ -433,6 +469,16 @@ def _event_issues(st: CompetitionState, home: str, away: str, kickoff: datetime,
     return issues
 
 
+def _is_two_leg(s: Session, ev: Event) -> bool:
+    """¿Hay un partido con los papeles invertidos a pocos días? (eliminatoria a ida y vuelta)."""
+    k = as_utc(ev.kickoff_utc)
+    win = timedelta(days=dc.KNOCKOUT_WINDOW_DAYS)
+    q = select(func.count(Event.id)).where(
+        Event.competition_id == ev.competition_id, Event.home_team_id == ev.away_team_id,
+        Event.away_team_id == ev.home_team_id, Event.kickoff_utc >= k - win, Event.kickoff_utc <= k + win)
+    return bool(s.scalar(q))
+
+
 def _blocking(issues: list[str]) -> bool:
     return any("sin historial" in i or "solo" in i or "Modelo no disponible" in i or "Sin partidos" in i
                for i in issues)
@@ -462,8 +508,10 @@ def _factors(m: dc.DixonColesModel, home: str, away: str, sm: ScoreMatrix) -> li
          "away": round(float(np.exp(m.attack[ia])), 2), "detail": "1.00 = media de la competición."},
         {"factor": "Solidez defensiva (× media liga)", "home": round(float(np.exp(m.defence[ih])), 2),
          "away": round(float(np.exp(m.defence[ia])), 2), "detail": ">1 concede menos que la media."},
-        {"factor": "Ventaja de localía", "home": round(float(np.exp(m.home_adv)), 2), "away": None,
-         "detail": "Multiplicador de goles esperado del local estimado en la competición."},
+        {"factor": "Ventaja de localía", "home": round(float(np.exp(m.home_advantage(home))), 2), "away": None,
+         "detail": ("Multiplicador de goles del local en su estadio (incluye altitud y viaje), encogido hacia "
+                    "el de la liga." if m.home_dev is not None else
+                    "Multiplicador de goles esperado del local estimado en la competición.")},
         {"factor": "Partidos en la muestra", "home": m.team_matches.get(home, 0), "away": m.team_matches.get(away, 0),
          "detail": "Partidos usados (ponderados por antigüedad)."},
     ]
